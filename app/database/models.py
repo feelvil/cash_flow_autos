@@ -322,3 +322,43 @@ class Movimiento(Base):
     usuario: Mapped["Usuario"] = relationship(back_populates="movimientos")
     # Auto-referencia: el movimiento de reversa que anula a este (si aplica).
     anulacion: Mapped["Movimiento | None"] = relationship(remote_side=[id])
+
+
+# ===========================================================================
+# 10. SALDOS_INICIALES  -> el saldo de arranque del flujo (punto de partida).
+#     NO es un movimiento ni un plan de cuentas: es el número desde el cual
+#     empieza a calcularse todo el saldo. Hoy hay una sola fila (global), pero
+#     la tabla queda preparada para: (a) saldo inicial por automotriz, y
+#     (b) un saldo inicial nuevo por cada ejercicio (ej: al arrancar 2027).
+# ===========================================================================
+class SaldoInicial(Base):
+    __tablename__ = "saldos_iniciales"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Fecha desde la que aplica este saldo inicial (ej: 2026-01-01).
+    fecha: Mapped[date] = mapped_column(Date, nullable=False)
+    # El monto de arranque. Es plata, por eso Numeric (nunca float).
+    monto: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    # Opcional: si algún día el saldo inicial se abre por automotriz.
+    # NULL = saldo inicial GLOBAL (el caso actual).
+    automotriz_id: Mapped[int | None] = mapped_column(
+        ForeignKey("automotrices.id"), nullable=True
+    )
+    descripcion: Mapped[str | None] = mapped_column(String, nullable=True)
+    activo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        # Evita cargar dos saldos iniciales para la misma fecha + automotriz.
+        # (Ojo: en Postgres, si automotriz_id es NULL, esta regla no lo frena;
+        #  por eso el script de carga igual chequea antes de insertar.)
+        UniqueConstraint(
+            "fecha", "automotriz_id", name="uq_saldos_iniciales_fecha_automotriz"
+        ),
+    )
+
+    automotriz: Mapped["Automotriz | None"] = relationship()
