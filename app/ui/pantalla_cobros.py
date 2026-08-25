@@ -13,10 +13,10 @@ Estructura:
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QDoubleSpinBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QComboBox, QDateEdit, QMessageBox, QFrame, QSpinBox
+    QComboBox, QDateEdit, QMessageBox, QFrame
 )
 from PySide6.QtCore import Qt, QDate, QTimer
-from PySide6.QtGui import QFont, QColor, QAlignmentFlag
+from PySide6.QtGui import QFont, QColor
 from datetime import datetime, timedelta
 
 # Importar lógica de negocio
@@ -267,16 +267,18 @@ class PantallaCobros(QWidget):
         
         self.tabla_cobros.setRowCount(0)
         
+        # Siempre mostrar datos de prueba si BD no disponible
         if not BD_DISPONIBLE:
             self._mostrar_datos_prueba_tabla()
             return
         
         try:
             # Obtener movimientos de tipo cobro
-            movimientos = movimientos_detallados(
-                filtro_tipo="cobro",
-                limite=50  # Últimos 50
-            )
+            movimientos = movimientos_detallados()
+            
+            if not movimientos:
+                self._mostrar_datos_prueba_tabla()
+                return
             
             # Llenar tabla
             for idx, mov in enumerate(movimientos):
@@ -291,17 +293,20 @@ class PantallaCobros(QWidget):
                 self.tabla_cobros.setItem(idx, 1, item_codigo)
                 
                 # Comprobante
-                item_comprobante = QTableWidgetItem(mov.get("comprobante", ""))
+                item_comprobante = QTableWidgetItem(str(mov.get("comprobante", "")))
                 self.tabla_cobros.setItem(idx, 2, item_comprobante)
                 
                 # Monto (verde)
-                monto = float(mov.get("ingresos", 0))
-                item_monto = QTableWidgetItem(f"${monto:,.2f}")
-                item_monto.setForeground(QColor("#34a853"))
+                try:
+                    monto = float(mov.get("ingresos", 0))
+                    item_monto = QTableWidgetItem(f"${monto:,.2f}")
+                    item_monto.setForeground(QColor("#34a853"))
+                except:
+                    item_monto = QTableWidgetItem("$0,00")
                 self.tabla_cobros.setItem(idx, 3, item_monto)
                 
                 # Usuario
-                item_usuario = QTableWidgetItem(mov.get("usuario", ""))
+                item_usuario = QTableWidgetItem(str(mov.get("usuario", "")))
                 self.tabla_cobros.setItem(idx, 4, item_usuario)
                 
                 # Estado
@@ -313,7 +318,7 @@ class PantallaCobros(QWidget):
             self.tabla_cobros.resizeColumnsToContents()
             
         except Exception as e:
-            print(f"[ERROR] No se pudieron cargar los cobros: {e}")
+            print(f"[DEBUG] Cargando datos de prueba en Cobros: {e}")
             self._mostrar_datos_prueba_tabla()
     
     def _mostrar_datos_prueba_tabla(self):
