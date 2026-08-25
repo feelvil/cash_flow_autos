@@ -1,0 +1,487 @@
+/* ============================================================================
+   CASH FLOW AUTOS — Estilos QSS (Qt Style Sheet)
+   ============================================================================
+   
+   Guía de tokens:
+   - Colores primarios: azul corporativo, verde (cobros), rojo (pagos)
+   - Tipografía: Segoe UI (sans-serif, nativa de Windows)
+   - Espaciado: múltiplos de 4px
+   - Bordes redondeados: 4px para componentes, 8px para tarjetas
+   
+   ============================================================================ */
+
+/* Paleta de colores base */
+QWidget {
+    /* Definir variables de estilo */
+    color: #2c3e50;        /* Texto principal (gris oscuro) */
+    background-color: #f8f9fa;  /* Fondo neutral claro */
+}
+
+/* ============================================================================
+   1. VENTANA PRINCIPAL
+   ============================================================================ */
+
+QMainWindow {
+    background-color: #f8f9fa;
+}
+
+/* ============================================================================
+   2. SIDEBAR (NAVEGACIÓN)
+   ============================================================================ */
+
+#sidebar {
+    background-color: #1a1a2e;  /* Azul muy oscuro */
+    border: none;
+}
+
+#logoLabel {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 16px;
+    padding: 12px;
+}
+
+#botonNav {
+    background-color: transparent;
+    color: #b0b0b0;  /* Gris suave */
+    border: none;
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 4px;
+    margin: 2px 8px;
+}
+
+#botonNav:hover {
+    background-color: #2d2d44;  /* Hover más claro */
+    color: #ffffff;
+}
+
+#botonNav:pressed,
+#botonNav.activo {
+    background-color: #1a73e8;  /* Azul primario */
+    color: #ffffff;
+}
+
+/* ============================================================================
+   3. PANEL CENTRAL
+   ============================================================================ */
+
+#panelCentral {
+    background-color: #f8f9fa;
+    border: none;
+}
+
+/* ============================================================================
+   4. TARJETAS (DASHBOARDS Y GRUPOS DE CONTENIDO)
+   ============================================================================ */
+
+#tarjeta {
+    background-color: #ffffff;
+    border: 1px solid #e8eaed;  /* Gris muy claro */
+    border-radius: 8px;
+    padding: 16px;
+}
+
+#tarjeta:hover {
+    border: 1px solid #d0d7e0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+#tarjetaTitulo {
+    color: #1a1a2e;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#tarjetaValor {
+    color: #1a73e8;  /* Azul primario */
+    font-size: 28px;
+    font-weight: bold;
+    margin-top: 8px;
+}
+
+#tarjetaSubtitulo {
+    color: #5f6368;  /* Gris medio */
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+/* Variantes de tarjeta por concepto */
+
+#tarjetaCobro #tarjetaValor {
+    color: #34a853;  /* Verde cobro */
+}
+
+#tarjetaPago #tarjetaValor {
+    color: #ea4335;  /* Rojo pago */
+}
+
+#tarjetaSaldo #tarjetaValor {
+    color: #1a73e8;  /* Azul */
+}
+
+/* ============================================================================
+   5. BOTONES
+   ============================================================================ */
+
+QPushButton {
+    background-color: #1a73e8;  /* Azul primario */
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 32px;
+}
+
+QPushButton:hover {
+    background-color: #1557c0;  /* Azul más oscuro */
+}
+
+QPushButton:pressed {
+    background-color: #0d47a1;  /* Azul aún más oscuro */
+}
+
+QPushButton:disabled {
+    background-color: #e8eaed;  /* Gris deshabilitado */
+    color: #b0b0b0;
+}
+
+/* Variantes de botones */
+
+#botonSecundario {
+    background-color: #ffffff;
+    color: #1a73e8;
+    border: 1px solid #1a73e8;
+}
+
+#botonSecundario:hover {
+    background-color: #f0f6ff;
+}
+
+#botonExito {
+    background-color: #34a853;  /* Verde */
+}
+
+#botonExito:hover {
+    background-color: #2d8e47;
+}
+
+#botonPeligro {
+    background-color: #ea4335;  /* Rojo */
+}
+
+#botonPeligro:hover {
+    background-color: #d33427;
+}
+
+#botonPequeno {
+    padding: 6px 12px;
+    font-size: 12px;
+    min-height: 28px;
+}
+
+/* ============================================================================
+   6. CAMPOS DE ENTRADA
+   ============================================================================ */
+
+QLineEdit,
+QTextEdit,
+QComboBox,
+QSpinBox,
+QDoubleSpinBox,
+QDateEdit {
+    background-color: #ffffff;
+    color: #2c3e50;
+    border: 1px solid #d0d7e0;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+QLineEdit:focus,
+QTextEdit:focus,
+QComboBox:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus,
+QDateEdit:focus {
+    border: 2px solid #1a73e8;  /* Azul al enfocar */
+    background-color: #f0f6ff;
+}
+
+QLineEdit:disabled,
+QTextEdit:disabled,
+QComboBox:disabled,
+QSpinBox:disabled,
+QDoubleSpinBox:disabled,
+QDateEdit:disabled {
+    background-color: #f8f9fa;
+    color: #b0b0b0;
+    border: 1px solid #e8eaed;
+}
+
+/* Placeholder */
+QLineEdit::placeholder {
+    color: #9aa0a6;
+}
+
+/* ============================================================================
+   7. ETIQUETAS
+   ============================================================================ */
+
+QLabel {
+    color: #2c3e50;
+    font-size: 13px;
+}
+
+#labelTitulo {
+    font-size: 20px;
+    font-weight: bold;
+    color: #1a1a2e;
+}
+
+#labelSubtitulo {
+    font-size: 14px;
+    color: #5f6368;
+}
+
+#labelAdvertencia {
+    color: #f57c00;  /* Naranja advertencia */
+    font-size: 12px;
+}
+
+#labelError {
+    color: #ea4335;  /* Rojo error */
+    font-size: 12px;
+}
+
+#labelExito {
+    color: #34a853;  /* Verde éxito */
+    font-size: 12px;
+}
+
+/* ============================================================================
+   8. TABLAS
+   ============================================================================ */
+
+QTableWidget,
+QTableView {
+    background-color: #ffffff;
+    alternate-background-color: #f8f9fa;
+    gridline-color: #e8eaed;
+    border: 1px solid #e8eaed;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+QTableWidget::item {
+    padding: 8px;
+    border: none;
+}
+
+QTableWidget::item:selected {
+    background-color: #e3f2fd;  /* Azul muy claro selección */
+    color: #1a73e8;
+}
+
+QHeaderView::section {
+    background-color: #f8f9fa;
+    color: #2c3e50;
+    padding: 8px;
+    border: none;
+    border-bottom: 2px solid #e8eaed;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+/* ============================================================================
+   9. SCROLLBARS
+   ============================================================================ */
+
+QScrollBar:vertical {
+    width: 12px;
+    background-color: #f8f9fa;
+    border: none;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #d0d7e0;
+    border-radius: 6px;
+    min-height: 20px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #9aa0a6;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    border: none;
+    background: none;
+}
+
+/* Horizontal scrollbar */
+QScrollBar:horizontal {
+    height: 12px;
+    background-color: #f8f9fa;
+    border: none;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #d0d7e0;
+    border-radius: 6px;
+    min-width: 20px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #9aa0a6;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    border: none;
+    background: none;
+}
+
+/* ============================================================================
+   10. DIÁLOGOS Y VENTANAS EMERGENTES
+   ============================================================================ */
+
+QDialog {
+    background-color: #f8f9fa;
+}
+
+#dialogTitulo {
+    color: #1a1a2e;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+/* ============================================================================
+   11. SEPARADORES
+   ============================================================================ */
+
+QFrame[frameShape="4"] {  /* HLine */
+    color: #e8eaed;
+}
+
+QFrame[frameShape="5"] {  /* VLine */
+    color: #e8eaed;
+}
+
+/* ============================================================================
+   12. PESTAÑAS
+   ============================================================================ */
+
+QTabWidget::pane {
+    border: none;
+    background-color: #ffffff;
+}
+
+QTabBar::tab {
+    background-color: #f8f9fa;
+    color: #5f6368;
+    padding: 8px 16px;
+    border: none;
+    border-bottom: 3px solid transparent;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+QTabBar::tab:hover {
+    background-color: #f0f0f0;
+    color: #2c3e50;
+}
+
+QTabBar::tab:selected {
+    background-color: #ffffff;
+    color: #1a73e8;
+    border-bottom: 3px solid #1a73e8;
+}
+
+/* ============================================================================
+   13. INDICADORES Y BADGES
+   ============================================================================ */
+
+#badge {
+    background-color: #e3f2fd;  /* Azul muy claro */
+    color: #1a73e8;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+#badgeCobro {
+    background-color: #e6f4ea;  /* Verde muy claro */
+    color: #34a853;
+}
+
+#badgePago {
+    background-color: #fadbd8;  /* Rojo muy claro */
+    color: #ea4335;
+}
+
+#badgeAdvertencia {
+    background-color: #fff3cd;  /* Amarillo claro */
+    color: #f57c00;
+}
+
+/* ============================================================================
+   14. TOOLTIPS
+   ============================================================================ */
+
+QToolTip {
+    background-color: #2c3e50;
+    color: #ffffff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+/* ============================================================================
+   15. MENUBAR Y MENÚS
+   ============================================================================ */
+
+QMenuBar {
+    background-color: #ffffff;
+    color: #2c3e50;
+    border-bottom: 1px solid #e8eaed;
+    font-size: 12px;
+}
+
+QMenuBar::item:selected {
+    background-color: #f0f6ff;
+}
+
+QMenu {
+    background-color: #ffffff;
+    color: #2c3e50;
+    border: 1px solid #e8eaed;
+    border-radius: 4px;
+    padding: 4px 0px;
+}
+
+QMenu::item:selected {
+    background-color: #f0f6ff;
+    color: #1a73e8;
+}
+
+/* ============================================================================
+   16. STATUSBAR
+   ============================================================================ */
+
+QStatusBar {
+    background-color: #ffffff;
+    color: #5f6368;
+    border-top: 1px solid #e8eaed;
+    font-size: 12px;
+}
+
+/* ============================================================================
+   FIN DE ESTILOS QSS
+   ============================================================================ */

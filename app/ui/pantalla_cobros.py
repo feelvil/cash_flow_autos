@@ -1,0 +1,363 @@
+"""
+CASH FLOW AUTOS — Pantalla de Cobros
+====================================
+
+Pantalla para registrar cobros (ingresos).
+
+Estructura:
+- Formulario de carga (código, comprobante, monto, descripción)
+- Tabla de últimos cobros registrados
+- Validaciones y manejo de errores
+"""
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QDoubleSpinBox, QPushButton, QTableWidget, QTableWidgetItem,
+    QComboBox, QDateEdit, QMessageBox, QFrame, QSpinBox
+)
+from PySide6.QtCore import Qt, QDate, QTimer
+from PySide6.QtGui import QFont, QColor, QAlignmentFlag
+from datetime import datetime, timedelta
+
+# Importar lógica de negocio
+try:
+    from app.logica.movimientos import crear_movimiento
+    from app.logica.reportes import movimientos_detallados
+    BD_DISPONIBLE = True
+except ImportError:
+    BD_DISPONIBLE = False
+
+
+class PantallaCobros(QWidget):
+    """Pantalla para registrar cobros (ingresos)."""
+    
+    def __init__(self):
+        """Inicializa la pantalla de cobros."""
+        super().__init__()
+        
+        self._crear_ui()
+        self._actualizar_tabla()
+        
+        # Timer para actualizar tabla cada 15 segundos
+        self.timer = QTimer()
+        self.timer.timeout.connect(self._actualizar_tabla)
+        self.timer.start(15000)
+    
+    def _crear_ui(self):
+        """Crea la interfaz de la pantalla."""
+        
+        layout_principal = QVBoxLayout(self)
+        layout_principal.setContentsMargins(20, 20, 20, 20)
+        layout_principal.setSpacing(16)
+        
+        # ═════════════════════════════════════════════════════
+        # SECCIÓN 1: FORMULARIO DE CARGA
+        # ═════════════════════════════════════════════════════
+        
+        # Título de la sección
+        lbl_titulo_form = QLabel("Registrar Nuevo Cobro")
+        font_titulo = QFont("Segoe UI", 14)
+        font_titulo.setWeight(QFont.Weight.Bold)
+        lbl_titulo_form.setFont(font_titulo)
+        layout_principal.addWidget(lbl_titulo_form)
+        
+        # Frame para el formulario
+        frame_form = QFrame()
+        frame_form.setStyleSheet("""
+            #frameForm {
+                background-color: #ffffff;
+                border: 1px solid #e8eaed;
+                border-radius: 8px;
+                padding: 16px;
+            }
+        """)
+        frame_form.setObjectName("frameForm")
+        layout_form = QVBoxLayout(frame_form)
+        layout_form.setSpacing(12)
+        
+        # ═════════════════════════════════════════════════════
+        # FILA 1: Código y Fecha
+        # ═════════════════════════════════════════════════════
+        layout_f1 = QHBoxLayout()
+        layout_f1.setSpacing(12)
+        
+        # Código (combo auto-completable o spinbox)
+        layout_f1.addWidget(QLabel("Código de Cuenta:"))
+        self.combo_codigo = QComboBox()
+        self.combo_codigo.setEditable(True)
+        self.combo_codigo.addItems([
+            "1041131 - Rentas NEUQUÉN 1° Q",
+            "1041132 - Rentas CORRIENTES",
+            "1041133 - Rentas MISIONES",
+            "1045451 - Registración",
+            "1050001 - Entidades co-participadas",
+        ])
+        layout_f1.addWidget(self.combo_codigo, 1)
+        
+        # Fecha
+        layout_f1.addWidget(QLabel("Fecha:"))
+        self.input_fecha = QDateEdit()
+        self.input_fecha.setDate(QDate.currentDate())
+        self.input_fecha.setCalendarPopup(True)
+        layout_f1.addWidget(self.input_fecha)
+        
+        layout_form.addLayout(layout_f1)
+        
+        # ═════════════════════════════════════════════════════
+        # FILA 2: Comprobante y Monto
+        # ═════════════════════════════════════════════════════
+        layout_f2 = QHBoxLayout()
+        layout_f2.setSpacing(12)
+        
+        # Comprobante
+        layout_f2.addWidget(QLabel("Comprobante:"))
+        self.input_comprobante = QLineEdit()
+        self.input_comprobante.setPlaceholderText("Ej: RC 0001-00072116")
+        layout_f2.addWidget(self.input_comprobante, 1)
+        
+        # Monto
+        layout_f2.addWidget(QLabel("Monto ($):"))
+        self.input_monto = QDoubleSpinBox()
+        self.input_monto.setMinimum(0.0)
+        self.input_monto.setMaximum(999999999999.99)
+        self.input_monto.setDecimals(2)
+        self.input_monto.setSingleStep(1000.0)
+        layout_f2.addWidget(self.input_monto)
+        
+        layout_form.addLayout(layout_f2)
+        
+        # ═════════════════════════════════════════════════════
+        # FILA 3: Descripción
+        # ═════════════════════════════════════════════════════
+        layout_f3 = QHBoxLayout()
+        layout_f3.setSpacing(12)
+        
+        layout_f3.addWidget(QLabel("Descripción (opcional):"))
+        self.input_descripcion = QLineEdit()
+        self.input_descripcion.setPlaceholderText("Observaciones o detalles adicionales")
+        layout_f3.addWidget(self.input_descripcion)
+        
+        layout_form.addLayout(layout_f3)
+        
+        # ═════════════════════════════════════════════════════
+        # FILA 4: Botones de acción
+        # ═════════════════════════════════════════════════════
+        layout_f4 = QHBoxLayout()
+        layout_f4.setSpacing(8)
+        
+        btn_guardar = QPushButton("💾 Guardar Cobro")
+        btn_guardar.setObjectName("botonExito")
+        btn_guardar.clicked.connect(self._guardar_cobro)
+        layout_f4.addWidget(btn_guardar)
+        
+        btn_limpiar = QPushButton("🗑️  Limpiar")
+        btn_limpiar.setObjectName("botonSecundario")
+        btn_limpiar.clicked.connect(self._limpiar_formulario)
+        layout_f4.addWidget(btn_limpiar)
+        
+        layout_f4.addStretch()
+        
+        layout_form.addLayout(layout_f4)
+        
+        layout_principal.addWidget(frame_form)
+        
+        # ═════════════════════════════════════════════════════
+        # SECCIÓN 2: TABLA DE ÚLTIMOS COBROS
+        # ═════════════════════════════════════════════════════
+        
+        lbl_titulo_tabla = QLabel("Últimos Cobros Registrados")
+        font_titulo = QFont("Segoe UI", 14)
+        font_titulo.setWeight(QFont.Weight.Bold)
+        lbl_titulo_tabla.setFont(font_titulo)
+        layout_principal.addWidget(lbl_titulo_tabla)
+        
+        # Tabla
+        self.tabla_cobros = QTableWidget()
+        self.tabla_cobros.setColumnCount(6)
+        self.tabla_cobros.setHorizontalHeaderLabels([
+            "Fecha", "Código", "Comprobante", "Monto", "Usuario", "Estado"
+        ])
+        self.tabla_cobros.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.tabla_cobros.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.tabla_cobros.setAlternatingRowColors(True)
+        self.tabla_cobros.setMinimumHeight(200)
+        
+        # Estilos de tabla
+        self.tabla_cobros.setStyleSheet("""
+            QTableWidget {
+                background-color: #ffffff;
+                gridline-color: #e8eaed;
+                border: 1px solid #e8eaed;
+                border-radius: 4px;
+            }
+            QTableWidget::item {
+                padding: 8px;
+                border: none;
+            }
+            QTableWidget::item:selected {
+                background-color: #e3f2fd;
+                color: #1a73e8;
+            }
+            QHeaderView::section {
+                background-color: #f8f9fa;
+                color: #2c3e50;
+                padding: 8px;
+                border: none;
+                border-bottom: 2px solid #e8eaed;
+                font-weight: 600;
+                font-size: 12px;
+            }
+        """)
+        
+        layout_principal.addWidget(self.tabla_cobros, 1)  # Tomar espacio flexible
+    
+    def _guardar_cobro(self):
+        """Guarda un nuevo cobro en la base de datos."""
+        
+        # Validar campos obligatorios
+        if not self.combo_codigo.currentText().strip():
+            QMessageBox.warning(self, "Validación", "Por favor ingrese el código de cuenta.")
+            return
+        
+        if self.input_monto.value() <= 0:
+            QMessageBox.warning(self, "Validación", "El monto debe ser mayor a cero.")
+            return
+        
+        try:
+            if not BD_DISPONIBLE:
+                QMessageBox.information(self, "Éxito", 
+                    "Cobro registrado exitosamente (modo prueba sin BD)")
+                self._limpiar_formulario()
+                return
+            
+            # Extraer el código (parte numérica antes del "-")
+            codigo_texto = self.combo_codigo.currentText()
+            codigo = int(codigo_texto.split(" - ")[0].strip())
+            
+            # Crear movimiento
+            crear_movimiento(
+                codigo=codigo,
+                monto=self.input_monto.value(),
+                comprobante=self.input_comprobante.text(),
+                descripcion=self.input_descripcion.text(),
+                fecha=self.input_fecha.date().toPython(),
+                usuario_id=1,  # TODO: Obtener usuario actual
+                confirmar=True
+            )
+            
+            QMessageBox.information(self, "Éxito", "Cobro registrado exitosamente")
+            self._limpiar_formulario()
+            self._actualizar_tabla()
+            
+        except ValueError:
+            QMessageBox.critical(self, "Error", "El código debe ser un número válido.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al guardar el cobro: {str(e)}")
+    
+    def _limpiar_formulario(self):
+        """Limpia todos los campos del formulario."""
+        self.combo_codigo.setCurrentIndex(0)
+        self.input_fecha.setDate(QDate.currentDate())
+        self.input_comprobante.clear()
+        self.input_monto.setValue(0.0)
+        self.input_descripcion.clear()
+    
+    def _actualizar_tabla(self):
+        """Actualiza la tabla con los últimos cobros."""
+        
+        self.tabla_cobros.setRowCount(0)
+        
+        if not BD_DISPONIBLE:
+            self._mostrar_datos_prueba_tabla()
+            return
+        
+        try:
+            # Obtener movimientos de tipo cobro
+            movimientos = movimientos_detallados(
+                filtro_tipo="cobro",
+                limite=50  # Últimos 50
+            )
+            
+            # Llenar tabla
+            for idx, mov in enumerate(movimientos):
+                self.tabla_cobros.insertRow(idx)
+                
+                # Fecha
+                item_fecha = QTableWidgetItem(str(mov.get("fecha", "")))
+                self.tabla_cobros.setItem(idx, 0, item_fecha)
+                
+                # Código
+                item_codigo = QTableWidgetItem(str(mov.get("codigo", "")))
+                self.tabla_cobros.setItem(idx, 1, item_codigo)
+                
+                # Comprobante
+                item_comprobante = QTableWidgetItem(mov.get("comprobante", ""))
+                self.tabla_cobros.setItem(idx, 2, item_comprobante)
+                
+                # Monto (verde)
+                monto = float(mov.get("ingresos", 0))
+                item_monto = QTableWidgetItem(f"${monto:,.2f}")
+                item_monto.setForeground(QColor("#34a853"))
+                self.tabla_cobros.setItem(idx, 3, item_monto)
+                
+                # Usuario
+                item_usuario = QTableWidgetItem(mov.get("usuario", ""))
+                self.tabla_cobros.setItem(idx, 4, item_usuario)
+                
+                # Estado
+                estado = "✓ Activo" if not mov.get("anulado") else "✗ Anulado"
+                item_estado = QTableWidgetItem(estado)
+                self.tabla_cobros.setItem(idx, 5, item_estado)
+            
+            # Ajustar ancho de columnas
+            self.tabla_cobros.resizeColumnsToContents()
+            
+        except Exception as e:
+            print(f"[ERROR] No se pudieron cargar los cobros: {e}")
+            self._mostrar_datos_prueba_tabla()
+    
+    def _mostrar_datos_prueba_tabla(self):
+        """Muestra datos de prueba en la tabla."""
+        
+        datos_prueba = [
+            ("2026-01-15", "1041131", "RC 0001-00072116", 17531900.00, "Sistema", "✓ Activo"),
+            ("2026-01-14", "1045451", "FC 0009-00002632", 2500000.00, "Sistema", "✓ Activo"),
+            ("2026-01-13", "1041132", "RC 0001-00072115", 5000000.00, "Sistema", "✓ Activo"),
+            ("2026-01-12", "1041133", "RC 0001-00072114", 1250000.00, "Sistema", "✓ Activo"),
+            ("2026-01-11", "1050001", "TR 0001-00000001", 10000000.00, "Sistema", "✓ Activo"),
+        ]
+        
+        for idx, (fecha, cod, comp, monto, usr, estado) in enumerate(datos_prueba):
+            self.tabla_cobros.insertRow(idx)
+            
+            self.tabla_cobros.setItem(idx, 0, QTableWidgetItem(fecha))
+            self.tabla_cobros.setItem(idx, 1, QTableWidgetItem(cod))
+            self.tabla_cobros.setItem(idx, 2, QTableWidgetItem(comp))
+            
+            item_monto = QTableWidgetItem(f"${monto:,.2f}")
+            item_monto.setForeground(QColor("#34a853"))
+            self.tabla_cobros.setItem(idx, 3, item_monto)
+            
+            self.tabla_cobros.setItem(idx, 4, QTableWidgetItem(usr))
+            self.tabla_cobros.setItem(idx, 5, QTableWidgetItem(estado))
+    
+    def closeEvent(self, event):
+        """Detiene el timer al cerrar la pantalla."""
+        self.timer.stop()
+        super().closeEvent(event)
+
+
+def main():
+    """Función principal para pruebas."""
+    from PySide6.QtWidgets import QApplication
+    import sys
+    
+    app = QApplication(sys.argv)
+    ventana = PantallaCobros()
+    ventana.show()
+    
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
