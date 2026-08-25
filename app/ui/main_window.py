@@ -13,7 +13,7 @@ separado que se intercambia en el QStackedWidget central.
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QPushButton,
-    QLabel, QStackedWidget, QFrame, QSpacing
+    QLabel, QStackedWidget, QFrame, 
 )
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QFont, QIcon
