@@ -23,9 +23,23 @@ from datetime import datetime, timedelta
 try:
     from app.logica.movimientos import crear_movimiento
     from app.logica.reportes import movimientos_detallados
+    from app.logica.catalogos import obtener_codigos_pago
     BD_DISPONIBLE = True
 except ImportError:
     BD_DISPONIBLE = False
+
+
+# Códigos de respaldo si la BD no está disponible (modo prueba / sin conexión).
+CODIGOS_PRUEBA_PAGO = [
+    "2010001 — Registración · Registración de unidades",
+    "2010002 — Registración · Comisiones",
+    "2020001 — Sueldos · Sueldos",
+    "2020002 — Sueldos · Cargas sociales",
+    "2030001 — Servicios · Luz, gas, teléfono",
+    "2030002 — Alquileres",
+    "2040001 — Impuestos",
+    "2050001 — Otros gastos",
+]
 
 
 class PantallaPagos(QWidget):
@@ -81,20 +95,12 @@ class PantallaPagos(QWidget):
         layout_f1 = QHBoxLayout()
         layout_f1.setSpacing(12)
         
-        # Código (combo auto-completable)
+        # Código (combo auto-completable, se llena desde la BD)
         layout_f1.addWidget(QLabel("Código de Cuenta:"))
         self.combo_codigo = QComboBox()
         self.combo_codigo.setEditable(True)
-        self.combo_codigo.addItems([
-            "2010001 - Registración de unidades",
-            "2010002 - Comisiones registración",
-            "2020001 - Sueldos",
-            "2020002 - Cargas sociales",
-            "2030001 - Servicios (luz, gas, teléfono)",
-            "2030002 - Alquileres",
-            "2040001 - Impuestos",
-            "2050001 - Otros gastos",
-        ])
+        self.combo_codigo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._cargar_codigos()  # llena el combo con datos reales (o de prueba)
         layout_f1.addWidget(self.combo_codigo, 1)
         
         # Fecha
@@ -214,6 +220,50 @@ class PantallaPagos(QWidget):
         
         layout_principal.addWidget(self.tabla_pagos, 1)  # Tomar espacio flexible
     
+    def _cargar_codigos(self):
+        """
+        Llena el combo de códigos con datos reales de la BD (partidas EGRESOS).
+        
+        Cada item guarda el texto visible y, oculto, el código numérico
+        (userData) que usamos al guardar. Si la BD no está disponible, cae a
+        una lista de prueba para que la pantalla siga usable en desarrollo.
+        """
+        self.combo_codigo.clear()
+        
+        if not BD_DISPONIBLE:
+            self.combo_codigo.addItems(CODIGOS_PRUEBA_PAGO)
+            return
+        
+        try:
+            codigos = obtener_codigos_pago()
+            if not codigos:
+                self.combo_codigo.addItems(CODIGOS_PRUEBA_PAGO)
+                return
+            
+            for c in codigos:
+                self.combo_codigo.addItem(c.etiqueta(), userData=c.codigo)
+                
+        except Exception as e:
+            print(f"[DEBUG] No se pudieron cargar códigos de la BD: {e}")
+            self.combo_codigo.addItems(CODIGOS_PRUEBA_PAGO)
+    
+    def _resolver_codigo(self) -> int:
+        """
+        Devuelve el código numérico elegido en el combo, de forma robusta.
+        
+        Si el userData coincide con el texto visible, lo usa (eligió de la
+        lista); si no (tipeó a mano), parsea el número del inicio del texto.
+        Lanza ValueError si no hay número válido.
+        """
+        texto = self.combo_codigo.currentText().strip()
+        data = self.combo_codigo.currentData()
+        
+        if data is not None and texto.startswith(str(data)):
+            return int(data)
+        
+        primer_token = texto.split(" ")[0].split("—")[0].strip()
+        return int(primer_token)
+    
     def _guardar_pago(self):
         """Guarda un nuevo pago en la base de datos."""
         
@@ -233,9 +283,8 @@ class PantallaPagos(QWidget):
                 self._limpiar_formulario()
                 return
             
-            # Extraer el código (parte numérica antes del "-")
-            codigo_texto = self.combo_codigo.currentText()
-            codigo = int(codigo_texto.split(" - ")[0].strip())
+            # Obtener el código de forma robusta (ver _resolver_codigo).
+            codigo = self._resolver_codigo()
             
             # Crear movimiento
             crear_movimiento(
