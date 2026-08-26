@@ -21,12 +21,17 @@ from datetime import datetime, timedelta
 
 # Importar lógica de negocio
 try:
-    from app.logica.movimientos import crear_movimiento
+    from app.database.conexion import SessionLocal
+    from app.logica.movimientos import crear_movimiento, ErrorDeNegocio
     from app.logica.reportes import movimientos_detallados
     from app.logica.catalogos import obtener_codigos_cobro
+    from app.logica import sesion
     BD_DISPONIBLE = True
 except ImportError:
     BD_DISPONIBLE = False
+    sesion = None
+    class ErrorDeNegocio(Exception):
+        pass
 
 # El panel de jerarquía se importa aparte: sabe manejar el caso sin BD por sí
 # mismo, así que queremos que esté disponible aunque la lógica no cargue.
@@ -368,16 +373,19 @@ class PantallaCobros(QWidget):
             # visible; si no, parseamos el número directo del texto tipeado.
             codigo = self._resolver_codigo()
             
-            # Crear movimiento
-            crear_movimiento(
-                codigo=codigo,
-                monto=self.input_monto.value(),
-                comprobante=self.input_comprobante.text(),
-                descripcion=self.input_descripcion.text(),
-                fecha=self.input_fecha.date().toPython(),
-                usuario_id=1,  # TODO: Obtener usuario actual
-                confirmar=True
-            )
+            # Crear movimiento. crear_movimiento espera la sesión como primer
+            # parámetro: abrimos una acá y la pasamos. confirmar=True hace commit.
+            with SessionLocal() as sesion_bd:
+                crear_movimiento(
+                    sesion_bd,
+                    codigo=codigo,
+                    monto=self.input_monto.value(),
+                    comprobante=self.input_comprobante.text(),
+                    descripcion=self.input_descripcion.text(),
+                    fecha=self.input_fecha.date().toPython(),
+                    usuario_id=sesion.usuario_actual_id() if sesion else 1,
+                    confirmar=True
+                )
             
             QMessageBox.information(self, "Éxito", "Cobro registrado exitosamente")
             self._limpiar_formulario()
@@ -385,6 +393,10 @@ class PantallaCobros(QWidget):
             
         except ValueError:
             QMessageBox.critical(self, "Error", "El código debe ser un número válido.")
+        except ErrorDeNegocio as e:
+            # Error esperable (código inexistente, usuario inactivo, etc.):
+            # mensaje claro, no técnico.
+            QMessageBox.warning(self, "No se pudo guardar", str(e))
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al guardar el cobro: {str(e)}")
     

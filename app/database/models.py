@@ -50,7 +50,7 @@ class Base(DeclarativeBase):
 # ===========================================================================
 class Usuario(Base):
     __tablename__ = "usuarios"
-
+    
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     nombre: Mapped[str] = mapped_column(String, nullable=False)
     # activo: si un usuario deja la empresa, lo marcamos inactivo en vez de borrarlo,
@@ -61,7 +61,7 @@ class Usuario(Base):
     creado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     # Relación inversa: desde un usuario podemos llegar a todos sus movimientos.
     movimientos: Mapped[list["Movimiento"]] = relationship(back_populates="usuario")
 

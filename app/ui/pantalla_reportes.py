@@ -21,6 +21,7 @@ from pathlib import Path
 # Importar lógica de negocio
 try:
     from app.database.conexion import SessionLocal
+    from app.logica import sesion
     from app.logica.reportes import (
         movimientos_detallados,
         resumen_por_clasificacion,
@@ -31,6 +32,14 @@ try:
     BD_DISPONIBLE = True
 except ImportError:
     BD_DISPONIBLE = False
+    sesion = None
+
+
+def _usuario_actual_id() -> int:
+    """Devuelve el id del usuario logueado (o 1 como respaldo si no hay sesión)."""
+    if sesion is not None:
+        return sesion.usuario_actual_id()
+    return 1
 
 
 class PantallaReportes(QWidget):
@@ -239,7 +248,8 @@ class PantallaReportes(QWidget):
             )
             return
         
-        if anular_movimiento_con_dialogo(movimiento, usuario_id=1, parent=self):
+        usuario_anulacion = _usuario_actual_id()
+        if anular_movimiento_con_dialogo(movimiento, usuario_id=usuario_anulacion, parent=self):
             self._actualizar_tabla()
     
     def _aplicar_filtros(self):

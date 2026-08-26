@@ -20,6 +20,12 @@ from PySide6.QtGui import QFont, QIcon
 from pathlib import Path
 import os
 
+# Sesión del usuario logueado (con fallback si no está disponible).
+try:
+    from app.logica import sesion
+except ImportError:
+    sesion = None
+
 # Importar las pantallas (se hacen lazy para que carguen rápido)
 # Por ahora están vacías, se crean después
 
@@ -207,10 +213,12 @@ class VentanaPrincipal(QMainWindow):
         # Espacio flexible
         layout.addStretch()
         
-        # Información del usuario (lado derecho)
-        info_usuario = QLabel("👤 Usuario: Sistema")
-        info_usuario.setObjectName("labelSubtitulo")
-        layout.addWidget(info_usuario)
+        # Información del usuario (lado derecho). Toma el nombre del usuario
+        # logueado desde la sesión; si no hay sesión, cae a "Sistema".
+        nombre_usuario = sesion.usuario_actual_nombre() if sesion else "Sistema"
+        self.info_usuario = QLabel(f"👤 {nombre_usuario}")
+        self.info_usuario.setObjectName("labelSubtitulo")
+        layout.addWidget(self.info_usuario)
         
         return header
     
