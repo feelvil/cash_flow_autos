@@ -1,494 +1,188 @@
 """
-CASH FLOW AUTOS — Pantalla de Pagos
-====================================
+Pantalla de Pagos: registrar egresos.
 
-Pantalla para registrar pagos (egresos).
-
-Estructura:
-- Formulario de carga (código, comprobante, monto, descripción)
-- Tabla de últimos pagos registrados
-- Validaciones y manejo de errores
+Similar a pantalla_cobros, pero para egresos.
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QDoubleSpinBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QComboBox, QDateEdit, QMessageBox, QFrame, QSpinBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
+    QPushButton, QTableWidget, QTableWidgetItem, QDateEdit, QSpinBox,
+    QMessageBox, QHeaderView
 )
-from PySide6.QtCore import Qt, QDate, QTimer
-from PySide6.QtGui import QFont, QColor
-from datetime import datetime, timedelta
+from PySide6.QtCore import Qt, QDate
 
-# Importar lógica de negocio
-try:
-    from app.database.conexion import SessionLocal
-    from app.logica.movimientos import crear_movimiento, ErrorDeNegocio
-    from app.logica.reportes import movimientos_detallados
-    from app.logica.catalogos import obtener_codigos_pago
-    from app.logica import sesion
-    BD_DISPONIBLE = True
-except ImportError:
-    BD_DISPONIBLE = False
-    sesion = None
-    class ErrorDeNegocio(Exception):
-        pass
-
-# El panel de jerarquía se importa aparte: sabe manejar el caso sin BD por sí
-# mismo, así que queremos que esté disponible aunque la lógica no cargue.
-try:
-    from app.ui.panel_jerarquia import PanelJerarquia
-except ImportError:
-    PanelJerarquia = None
-
-# Completer con búsqueda por palabras (nombre o número) para el combo de códigos.
-try:
-    from app.ui.completer_codigos import instalar_completer_palabras
-except ImportError:
-    instalar_completer_palabras = None
-
-
-# Códigos de respaldo si la BD no está disponible (modo prueba / sin conexión).
-CODIGOS_PRUEBA_PAGO = [
-    "2010001 — Registración · Registración de unidades",
-    "2010002 — Registración · Comisiones",
-    "2020001 — Sueldos · Sueldos",
-    "2020002 — Sueldos · Cargas sociales",
-    "2030001 — Servicios · Luz, gas, teléfono",
-    "2030002 — Alquileres",
-    "2040001 — Impuestos",
-    "2050001 — Otros gastos",
-]
+from app.logica.movimientos import crear_movimiento, ErrorDeNegocio
+from app.logica.catalogos import listar_codigos_con_detalle
+from app.logica import sesion
 
 
 class PantallaPagos(QWidget):
-    """Pantalla para registrar pagos (egresos)."""
+    """
+    Pantalla para registrar pagos (egresos).
+    
+    Estructura y flujo similares a PantallaCobros, pero para egresos.
+    """
     
     def __init__(self):
-        """Inicializa la pantalla de pagos."""
         super().__init__()
         
-        self._crear_ui()
-        self._actualizar_tabla()
+        layout = QVBoxLayout(self)
+        layout.setSpacing(16)
+        layout.setContentsMargins(16, 16, 16, 16)
         
-        # Timer para actualizar tabla cada 15 segundos
-        self.timer = QTimer()
-        self.timer.timeout.connect(self._actualizar_tabla)
-        self.timer.start(15000)
+        # Título
+        titulo = QLabel("Registro de Pagos")
+        titulo.setStyleSheet("font-size: 18px; font-weight: bold; color: #333;")
+        layout.addWidget(titulo)
+        
+        # Formulario
+        layout_form = self._crear_formulario()
+        layout.addLayout(layout_form)
+        
+        # Tabla de referencia
+        layout.addWidget(QLabel("Últimos pagos"))
+        self.tabla_referencia = self._crear_tabla_referencia()
+        layout.addWidget(self.tabla_referencia)
+        
+        self._cargar_referencias()
     
-    def _crear_ui(self):
-        """Crea la interfaz de la pantalla."""
+    def _crear_formulario(self) -> QVBoxLayout:
+        """Crear formulario para registrar pago."""
+        layout = QVBoxLayout()
+        layout.setSpacing(12)
         
-        layout_principal = QVBoxLayout(self)
-        layout_principal.setContentsMargins(20, 20, 20, 20)
-        layout_principal.setSpacing(16)
-        
-        # ═════════════════════════════════════════════════════
-        # SECCIÓN 1: FORMULARIO DE CARGA
-        # ═════════════════════════════════════════════════════
-        
-        # Título de la sección
-        lbl_titulo_form = QLabel("Registrar Nuevo Pago")
-        font_titulo = QFont("Segoe UI", 14)
-        font_titulo.setWeight(QFont.Weight.Bold)
-        lbl_titulo_form.setFont(font_titulo)
-        layout_principal.addWidget(lbl_titulo_form)
-        
-        # Frame para el formulario
-        frame_form = QFrame()
-        frame_form.setStyleSheet("""
-            #frameForm {
-                background-color: #ffffff;
-                border: 1px solid #e8eaed;
-                border-radius: 8px;
-                padding: 16px;
-            }
-        """)
-        frame_form.setObjectName("frameForm")
-        layout_form = QVBoxLayout(frame_form)
-        layout_form.setSpacing(12)
-        
-        # ═════════════════════════════════════════════════════
-        # FILA 1: Código y Fecha
-        # ═════════════════════════════════════════════════════
-        layout_f1 = QHBoxLayout()
-        layout_f1.setSpacing(12)
-        
-        # Código (combo auto-completable, se llena desde la BD)
-        layout_f1.addWidget(QLabel("Código de Cuenta:"))
+        # Código
+        layout.addWidget(QLabel("Código de plan de cuentas"))
         self.combo_codigo = QComboBox()
-        self.combo_codigo.setEditable(True)
-        self.combo_codigo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._cargar_codigos()  # llena el combo con datos reales (o de prueba)
-        # Búsqueda por palabras (nombre o número). Va DESPUÉS de llenar el combo.
-        if instalar_completer_palabras is not None:
-            instalar_completer_palabras(self.combo_codigo)
-        layout_f1.addWidget(self.combo_codigo, 1)
+        codigos = listar_codigos_con_detalle()
+        for cod_info in codigos:
+            self.combo_codigo.addItem(
+                f"{cod_info['codigo']} - {cod_info['detalle']}",
+                cod_info['codigo']
+            )
+        layout.addWidget(self.combo_codigo)
         
-        # Fecha
-        layout_f1.addWidget(QLabel("Fecha:"))
+        # Fecha y monto
+        layout_fila1 = QHBoxLayout()
+        layout_fila1.setSpacing(12)
+        
+        layout_fila1.addWidget(QLabel("Fecha"))
         self.input_fecha = QDateEdit()
         self.input_fecha.setDate(QDate.currentDate())
         self.input_fecha.setCalendarPopup(True)
-        layout_f1.addWidget(self.input_fecha)
+        layout_fila1.addWidget(self.input_fecha)
         
-        layout_form.addLayout(layout_f1)
+        layout_fila1.addWidget(QLabel("Monto"))
+        self.input_monto = QSpinBox()
+        self.input_monto.setMaximum(999999999)
+        self.input_monto.setPrefix("$")
+        layout_fila1.addWidget(self.input_monto)
         
-        # ═════════════════════════════════════════════════════
-        # PANEL DE JERARQUÍA (se actualiza al elegir/tipear un código)
-        # ═════════════════════════════════════════════════════
-        if PanelJerarquia is not None:
-            self.panel_jerarquia = PanelJerarquia()
-            layout_form.addWidget(self.panel_jerarquia)
-        else:
-            self.panel_jerarquia = None
-        
-        # Debounce: esperar 300 ms de "silencio" antes de consultar la BD.
-        self._timer_jerarquia = QTimer()
-        self._timer_jerarquia.setSingleShot(True)
-        self._timer_jerarquia.setInterval(300)
-        self._timer_jerarquia.timeout.connect(self._actualizar_jerarquia)
-        
-        self.combo_codigo.currentIndexChanged.connect(self._programar_jerarquia)
-        self.combo_codigo.editTextChanged.connect(self._programar_jerarquia)
-        
-        # Mostrar la jerarquía del código inicial.
-        self._actualizar_jerarquia()
-        
-        # ═════════════════════════════════════════════════════
-        # FILA 2: Comprobante y Monto
-        # ═════════════════════════════════════════════════════
-        layout_f2 = QHBoxLayout()
-        layout_f2.setSpacing(12)
+        layout_fila1.addStretch()
+        layout.addLayout(layout_fila1)
         
         # Comprobante
-        layout_f2.addWidget(QLabel("Comprobante:"))
+        layout_fila2 = QHBoxLayout()
+        layout_fila2.setSpacing(12)
+        
+        layout_fila2.addWidget(QLabel("Comprobante (opcional)"))
         self.input_comprobante = QLineEdit()
-        self.input_comprobante.setPlaceholderText("Ej: FC 0009-00002632 o Cheque Nº 123456")
-        layout_f2.addWidget(self.input_comprobante, 1)
+        self.input_comprobante.setPlaceholderText("Ej: FC 001-000234")
+        layout_fila2.addWidget(self.input_comprobante)
         
-        # Monto
-        layout_f2.addWidget(QLabel("Monto ($):"))
-        self.input_monto = QDoubleSpinBox()
-        self.input_monto.setMinimum(0.0)
-        self.input_monto.setMaximum(999999999999.99)
-        self.input_monto.setDecimals(2)
-        self.input_monto.setSingleStep(1000.0)
-        layout_f2.addWidget(self.input_monto)
+        layout_fila2.addStretch()
+        layout.addLayout(layout_fila2)
         
-        layout_form.addLayout(layout_f2)
+        # Botón guardar
+        layout_botones = QHBoxLayout()
         
-        # ═════════════════════════════════════════════════════
-        # FILA 3: Descripción
-        # ═════════════════════════════════════════════════════
-        layout_f3 = QHBoxLayout()
-        layout_f3.setSpacing(12)
-        
-        layout_f3.addWidget(QLabel("Descripción (opcional):"))
-        self.input_descripcion = QLineEdit()
-        self.input_descripcion.setPlaceholderText("Observaciones o detalles adicionales")
-        layout_f3.addWidget(self.input_descripcion)
-        
-        layout_form.addLayout(layout_f3)
-        
-        # ═════════════════════════════════════════════════════
-        # FILA 4: Botones de acción
-        # ═════════════════════════════════════════════════════
-        layout_f4 = QHBoxLayout()
-        layout_f4.setSpacing(8)
-        
-        btn_guardar = QPushButton("💾 Guardar Pago")
-        btn_guardar.setObjectName("botonPeligro")
-        btn_guardar.clicked.connect(self._guardar_pago)
-        layout_f4.addWidget(btn_guardar)
-        
-        btn_limpiar = QPushButton("🗑️  Limpiar")
-        btn_limpiar.setObjectName("botonSecundario")
-        btn_limpiar.clicked.connect(self._limpiar_formulario)
-        layout_f4.addWidget(btn_limpiar)
-        
-        layout_f4.addStretch()
-        
-        layout_form.addLayout(layout_f4)
-        
-        layout_principal.addWidget(frame_form)
-        
-        # ═════════════════════════════════════════════════════
-        # SECCIÓN 2: TABLA DE ÚLTIMOS PAGOS
-        # ═════════════════════════════════════════════════════
-        
-        lbl_titulo_tabla = QLabel("Últimos Pagos Registrados")
-        font_titulo = QFont("Segoe UI", 14)
-        font_titulo.setWeight(QFont.Weight.Bold)
-        lbl_titulo_tabla.setFont(font_titulo)
-        layout_principal.addWidget(lbl_titulo_tabla)
-        
-        # Tabla
-        self.tabla_pagos = QTableWidget()
-        self.tabla_pagos.setColumnCount(6)
-        self.tabla_pagos.setHorizontalHeaderLabels([
-            "Fecha", "Código", "Comprobante", "Monto", "Usuario", "Estado"
-        ])
-        self.tabla_pagos.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.tabla_pagos.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.tabla_pagos.setAlternatingRowColors(True)
-        self.tabla_pagos.setMinimumHeight(200)
-        
-        # Estilos de tabla
-        self.tabla_pagos.setStyleSheet("""
-            QTableWidget {
-                background-color: #ffffff;
-                gridline-color: #e8eaed;
-                border: 1px solid #e8eaed;
+        btn_guardar = QPushButton("Guardar pago")
+        btn_guardar.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #F44336;
+                color: white;
+                border: none;
+                padding: 8px 24px;
                 border-radius: 4px;
+                font-weight: bold;
             }
-            QTableWidget::item {
-                padding: 8px;
-                border: none;
+            QPushButton:hover {
+                background-color: #da190b;
             }
-            QTableWidget::item:selected {
-                background-color: #fadbd8;
-                color: #ea4335;
-            }
-            QHeaderView::section {
-                background-color: #f8f9fa;
-                color: #2c3e50;
-                padding: 8px;
-                border: none;
-                border-bottom: 2px solid #e8eaed;
-                font-weight: 600;
-                font-size: 12px;
-            }
-        """)
+            """
+        )
+        btn_guardar.clicked.connect(self._guardar_pago)
         
-        layout_principal.addWidget(self.tabla_pagos, 1)  # Tomar espacio flexible
+        layout_botones.addStretch()
+        layout_botones.addWidget(btn_guardar)
+        layout.addLayout(layout_botones)
+        
+        return layout
     
-    def _cargar_codigos(self):
-        """
-        Llena el combo de códigos con datos reales de la BD (partidas EGRESOS).
+    def _crear_tabla_referencia(self) -> QTableWidget:
+        """Crear tabla con últimos pagos."""
+        tabla = QTableWidget()
+        tabla.setColumnCount(4)
+        tabla.setHorizontalHeaderLabels(["Fecha", "Código", "Comprobante", "Monto"])
         
-        Cada item guarda el texto visible y, oculto, el código numérico
-        (userData) que usamos al guardar. Si la BD no está disponible, cae a
-        una lista de prueba para que la pantalla siga usable en desarrollo.
-        """
-        self.combo_codigo.clear()
+        header = tabla.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         
-        if not BD_DISPONIBLE:
-            self.combo_codigo.addItems(CODIGOS_PRUEBA_PAGO)
-            return
+        tabla.setMaximumHeight(250)
+        tabla.setEditTriggers(QTableWidget.NoEditTriggers)
         
-        try:
-            codigos = obtener_codigos_pago()
-            if not codigos:
-                self.combo_codigo.addItems(CODIGOS_PRUEBA_PAGO)
-                return
-            
-            for c in codigos:
-                self.combo_codigo.addItem(c.etiqueta(), userData=c.codigo)
-                
-        except Exception as e:
-            print(f"[DEBUG] No se pudieron cargar códigos de la BD: {e}")
-            self.combo_codigo.addItems(CODIGOS_PRUEBA_PAGO)
+        return tabla
     
-    def _programar_jerarquia(self, *args):
-        """Reinicia el timer de debounce ante cada cambio del combo."""
-        if self.panel_jerarquia is not None:
-            self._timer_jerarquia.start()
-    
-    def _actualizar_jerarquia(self):
-        """Busca la clasificación del código actual y la muestra en el panel."""
-        if self.panel_jerarquia is None:
-            return
-        try:
-            codigo = self._resolver_codigo()
-        except (ValueError, AttributeError):
-            self.panel_jerarquia.limpiar()
-            return
-        self.panel_jerarquia.mostrar_codigo(codigo)
-    
-    def _resolver_codigo(self) -> int:
-        """
-        Devuelve el código numérico elegido en el combo, de forma robusta.
-        
-        Si el userData coincide con el texto visible, lo usa (eligió de la
-        lista); si no (tipeó a mano), parsea el número del inicio del texto.
-        Lanza ValueError si no hay número válido.
-        """
-        texto = self.combo_codigo.currentText().strip()
-        data = self.combo_codigo.currentData()
-        
-        if data is not None and texto.startswith(str(data)):
-            return int(data)
-        
-        primer_token = texto.split(" ")[0].split("—")[0].strip()
-        return int(primer_token)
+    def _cargar_referencias(self):
+        """Cargar últimos pagos en la tabla."""
+        # TODO: implementar carga
+        pass
     
     def _guardar_pago(self):
-        """Guarda un nuevo pago en la base de datos."""
-        
-        # Validar campos obligatorios
-        if not self.combo_codigo.currentText().strip():
-            QMessageBox.warning(self, "Validación", "Por favor ingrese el código de cuenta.")
-            return
-        
-        if self.input_monto.value() <= 0:
-            QMessageBox.warning(self, "Validación", "El monto debe ser mayor a cero.")
-            return
-        
+        """Guardar el pago en BD."""
         try:
-            if not BD_DISPONIBLE:
-                QMessageBox.information(self, "Éxito", 
-                    "Pago registrado exitosamente (modo prueba sin BD)")
-                self._limpiar_formulario()
+            codigo = self.combo_codigo.currentData()
+            fecha = self.input_fecha.date().toPython()
+            monto = self.input_monto.value()
+            comprobante = self.input_comprobante.text() or None
+            
+            if not codigo:
+                QMessageBox.warning(self, "Error", "Selecciona un código")
                 return
             
-            # Obtener el código de forma robusta (ver _resolver_codigo).
-            codigo = self._resolver_codigo()
+            if monto <= 0:
+                QMessageBox.warning(self, "Error", "El monto debe ser mayor a 0")
+                return
             
-            # Crear movimiento. crear_movimiento espera la sesión como primer
-            # parámetro: abrimos una acá y la pasamos. confirmar=True hace commit.
+            usuario_id = sesion.usuario_actual_id()
+            
+            from app.database.conexion import SessionLocal
             with SessionLocal() as sesion_bd:
                 crear_movimiento(
                     sesion_bd,
                     codigo=codigo,
-                    monto=self.input_monto.value(),
-                    comprobante=self.input_comprobante.text(),
-                    descripcion=self.input_descripcion.text(),
-                    fecha=self.input_fecha.date().toPython(),
-                    usuario_id=sesion.usuario_actual_id() if sesion else 1,
-                    confirmar=True
+                    fecha=fecha,
+                    monto=monto,
+                    usuario_id=usuario_id,
+                    comprobante=comprobante
                 )
             
-            QMessageBox.information(self, "Éxito", "Pago registrado exitosamente")
-            self._limpiar_formulario()
-            self._actualizar_tabla()
-            
-        except ValueError:
-            QMessageBox.critical(self, "Error", "El código debe ser un número válido.")
-        except ErrorDeNegocio as e:
-            QMessageBox.warning(self, "No se pudo guardar", str(e))
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al guardar el pago: {str(e)}")
-    
-    def _limpiar_formulario(self):
-        """Limpia todos los campos del formulario."""
-        self.combo_codigo.setCurrentIndex(0)
-        self.input_fecha.setDate(QDate.currentDate())
-        self.input_comprobante.clear()
-        self.input_monto.setValue(0.0)
-        self.input_descripcion.clear()
-    
-    def _actualizar_tabla(self):
-        """Actualiza la tabla con los últimos pagos."""
-        
-        self.tabla_pagos.setRowCount(0)
-        
-        if not BD_DISPONIBLE:
-            self._mostrar_datos_prueba_tabla()
-            return
-        
-        try:
-            # Obtener movimientos de tipo pago
-            movimientos = movimientos_detallados(
-                filtro_tipo="pago",
-                limite=50  # Últimos 50
+            QMessageBox.information(
+                self,
+                "Éxito",
+                f"Pago registrado: ${monto:,.2f}"
             )
             
-            # Llenar tabla
-            for idx, mov in enumerate(movimientos):
-                self.tabla_pagos.insertRow(idx)
-                
-                # Fecha — guardamos el dict completo del movimiento en UserRole,
-                # para poder anularlo sin re-consultar la BD.
-                item_fecha = QTableWidgetItem(str(mov.get("fecha", "")))
-                item_fecha.setData(Qt.ItemDataRole.UserRole, mov)
-                self.tabla_pagos.setItem(idx, 0, item_fecha)
-                
-                # Código
-                item_codigo = QTableWidgetItem(str(mov.get("codigo", "")))
-                self.tabla_pagos.setItem(idx, 1, item_codigo)
-                
-                # Comprobante
-                item_comprobante = QTableWidgetItem(str(mov.get("comprobante", "")))
-                self.tabla_pagos.setItem(idx, 2, item_comprobante)
-                
-                # Monto (rojo)
-                try:
-                    monto = float(mov.get("egresos", 0))
-                    item_monto = QTableWidgetItem(f"${monto:,.2f}")
-                    item_monto.setForeground(QColor("#ea4335"))
-                except:
-                    item_monto = QTableWidgetItem("$0,00")
-                self.tabla_pagos.setItem(idx, 3, item_monto)
-                
-                # Usuario
-                item_usuario = QTableWidgetItem(str(mov.get("usuario", "")))
-                self.tabla_pagos.setItem(idx, 4, item_usuario)
-                
-                # Estado
-                anulado = bool(mov.get("anulado"))
-                estado = "✗ Anulado" if anulado else "✓ Activo"
-                item_estado = QTableWidgetItem(estado)
-                self.tabla_pagos.setItem(idx, 5, item_estado)
-                
-                # Si está anulado, atenuar y tachar toda la fila.
-                if anulado:
-                    for col in range(6):
-                        it = self.tabla_pagos.item(idx, col)
-                        if it:
-                            fuente = it.font()
-                            fuente.setStrikeOut(True)
-                            it.setFont(fuente)
-                            it.setForeground(QColor("#9aa0a6"))
-            
-            # Ajustar ancho de columnas
-            self.tabla_pagos.resizeColumnsToContents()
-            
+            self.input_monto.setValue(0)
+            self.input_comprobante.clear()
+            self.input_fecha.setDate(QDate.currentDate())
+            self._cargar_referencias()
+        
+        except ErrorDeNegocio as e:
+            QMessageBox.critical(self, "Error", str(e))
         except Exception as e:
-            print(f"[ERROR] No se pudieron cargar los pagos: {e}")
-            self._mostrar_datos_prueba_tabla()
-    
-    def _mostrar_datos_prueba_tabla(self):
-        """Muestra datos de prueba en la tabla."""
-        
-        datos_prueba = [
-            ("2026-01-15", "2010001", "FC 0009-00002632", 2500000.00, "Sistema", "✓ Activo"),
-            ("2026-01-14", "2020001", "TR 0001-00000001", 50000000.00, "Sistema", "✓ Activo"),
-            ("2026-01-13", "2030001", "FC 0010-00000001", 1500000.00, "Sistema", "✓ Activo"),
-            ("2026-01-12", "2040001", "AFC - Enero", 35000000.00, "Sistema", "✓ Activo"),
-            ("2026-01-11", "2010002", "FC 0009-00002631", 800000.00, "Sistema", "✓ Activo"),
-        ]
-        
-        for idx, (fecha, cod, comp, monto, usr, estado) in enumerate(datos_prueba):
-            self.tabla_pagos.insertRow(idx)
-            
-            self.tabla_pagos.setItem(idx, 0, QTableWidgetItem(fecha))
-            self.tabla_pagos.setItem(idx, 1, QTableWidgetItem(cod))
-            self.tabla_pagos.setItem(idx, 2, QTableWidgetItem(comp))
-            
-            item_monto = QTableWidgetItem(f"${monto:,.2f}")
-            item_monto.setForeground(QColor("#ea4335"))
-            self.tabla_pagos.setItem(idx, 3, item_monto)
-            
-            self.tabla_pagos.setItem(idx, 4, QTableWidgetItem(usr))
-            self.tabla_pagos.setItem(idx, 5, QTableWidgetItem(estado))
-    
-    def closeEvent(self, event):
-        """Detiene el timer al cerrar la pantalla."""
-        self.timer.stop()
-        super().closeEvent(event)
-
-
-def main():
-    """Función principal para pruebas."""
-    from PySide6.QtWidgets import QApplication
-    import sys
-    
-    app = QApplication(sys.argv)
-    ventana = PantallaPagos()
-    ventana.show()
-    
-    sys.exit(app.exec())
-
-
-if __name__ == "__main__":
-    main()
+            QMessageBox.critical(self, "Error", f"Error inesperado: {str(e)}")

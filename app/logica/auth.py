@@ -1,172 +1,290 @@
 """
-auth.py
-=======
-Autenticación de usuarios: verificar login, setear y cambiar contraseñas.
+Módulo de autenticación: login, hashing de contraseñas con bcrypt, cambio de contraseña.
 
-Reglas de seguridad que respeta este módulo:
-  - La contraseña NUNCA se guarda en texto plano. Se guarda un "hash" con
-    bcrypt, que es de una sola vía (no se puede volver atrás) e incluye un
-    "salt" aleatorio distinto por usuario (dos usuarios con la misma clave
-    tienen hashes diferentes).
-  - bcrypt es lento a propósito: eso hace inviable probar millones de claves
-    por fuerza bruta.
+Funciones principales:
+- listar_usuarios_activos(): para poblar combos en login
+- verificar_login(usuario_id, password): validar entrada en login
+- establecer_password(usuario_id, password): para primer ingreso (admin)
+- cambiar_password(usuario_id, password_actual, password_nueva): usuario autoservicio
 
-Casos que maneja:
-  - Usuario con contraseña ya seteada -> se valida contra el hash.
-  - Usuario sin contraseña (password_hash = NULL) -> "primer ingreso": la app
-    puede pedirle que defina una contraseña. verificar_login lo señala aparte.
-  - Usuario inactivo -> no puede entrar.
+Las contraseñas NUNCA se guardan en texto plano.
+Se usa bcrypt: hashing con salt único por usuario, lento a propósito.
 """
 
-from dataclasses import dataclass
-
 import bcrypt
-from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.database.conexion import SessionLocal
 from app.database.models import Usuario
 
 
-# ---------------------------------------------------------------------------
-# Resultado de un intento de login. Es más claro que devolver True/False/None
-# suelto: la UI sabe exactamente qué pasó y actúa en consecuencia.
-# ---------------------------------------------------------------------------
-@dataclass
-class ResultadoLogin:
-    ok: bool                    # True si el login fue exitoso
-    usuario_id: int | None      # id del usuario si ok, None si no
-    nombre: str | None          # nombre del usuario si ok
-    necesita_password: bool     # True si el usuario aún no tiene contraseña
-    mensaje: str                # texto para mostrar al usuario
+# ============================================================================
+# EXCEPCIONES PERSONALIZADAS
+# ============================================================================
+
+class ErrorDeNegocio(Exception):
+    """Excepción para errores esperados de negocio (contraseña incorrecta, etc.)."""
+    pass
 
 
-# ---------------------------------------------------------------------------
-# Helpers de hashing (bcrypt trabaja con bytes; encapsulamos la conversión).
-# ---------------------------------------------------------------------------
-def hashear_password(password: str) -> str:
+# ============================================================================
+# FUNCIONES DE UTILIDAD: HASHING
+# ============================================================================
+
+def _hash_password(password: str) -> str:
     """
-    Devuelve el hash bcrypt de una contraseña, listo para guardar en la BD.
-    El salt se genera solo y queda incluido dentro del hash.
+    Hashear una contraseña usando bcrypt.
+    
+    Args:
+        password (str): Contraseña en texto plano
+    
+    Retorna:
+        str: Hash seguro de la contraseña (bytes codificados como string UTF-8)
+    
+    Nota:
+        bcrypt es lento a propósito (~0.3s) para dificultar ataques de fuerza bruta.
     """
-    password_bytes = password.encode("utf-8")
-    hash_bytes = bcrypt.hashpw(password_bytes, bcrypt.gensalt())
-    return hash_bytes.decode("utf-8")
+    # Generar salt (factor de costo 12 = ~300ms en máquinas modernas)
+    salt = bcrypt.gensalt(rounds=12)
+    
+    # Hashear la contraseña
+    password_hash = bcrypt.hashpw(password.encode('utf-8'), salt)
+    
+    # Convertir bytes a string para guardar en BD
+    return password_hash.decode('utf-8')
 
 
-def verificar_password(password: str, hash_guardado: str) -> bool:
+def _verificar_password(password: str, password_hash: str) -> bool:
     """
-    Compara una contraseña tipeada contra el hash guardado.
-    Devuelve True si coinciden. Nunca lanza si el hash es inválido: devuelve False.
+    Verificar que una contraseña coincida con su hash.
+    
+    Args:
+        password (str): Contraseña en texto plano (ingresada por usuario)
+        password_hash (str): Hash guardado en la BD
+    
+    Retorna:
+        bool: True si la contraseña es correcta, False caso contrario
+    
+    Nota:
+        bcrypt.checkpw() es timing-safe: tarda siempre lo mismo,
+        sin importar dónde falle la comparación (contra timing attacks).
     """
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), hash_guardado.encode("utf-8"))
-    except (ValueError, TypeError):
-        # Hash corrupto o formato inesperado -> tratamos como no coincide.
+        # Convertir hash de string a bytes
+        password_hash_bytes = password_hash.encode('utf-8')
+        
+        # Comparar (timing-safe)
+        return bcrypt.checkpw(password.encode('utf-8'), password_hash_bytes)
+    except Exception:
+        # Si hay error (ej: hash corrupto), retornar False
         return False
 
 
-# ---------------------------------------------------------------------------
-# API pública que usa la UI.
-# ---------------------------------------------------------------------------
+# ============================================================================
+# FUNCIONES DE AUTENTICACIÓN
+# ============================================================================
+
 def listar_usuarios_activos() -> list[dict]:
     """
-    Devuelve los usuarios activos (para poblar el combo de la pantalla de login).
-    Cada uno: {id, nombre, tiene_password}.
+    Listar todos los usuarios activos, para el combo del login.
+    
+    Retorna:
+        list[dict]: Lista de usuarios con estructura {'id': int, 'nombre': str}
     """
     with SessionLocal() as sesion:
-        usuarios = sesion.execute(
-            select(Usuario).where(Usuario.activo == True).order_by(Usuario.nombre)  # noqa: E712
-        ).scalars().all()
-        return [
-            {
-                "id": u.id,
-                "nombre": u.nombre,
-                "tiene_password": bool(u.password_hash),
-            }
+        usuarios = sesion.query(Usuario).filter(Usuario.activo == True).all()
+        
+        resultado = [
+            {'id': u.id, 'nombre': u.nombre}
             for u in usuarios
         ]
+        
+        return resultado
+
+
+class ResultadoLogin:
+    """
+    Resultado de un intento de login.
+    
+    Atributos:
+        exitoso (bool): Si el login fue correcto
+        mensaje (str): Descripción del resultado
+        usuario_id (int | None): ID del usuario si fue exitoso
+        necesita_password (bool): Si el usuario no tiene contraseña aún
+    """
+    
+    def __init__(self, exitoso=False, mensaje="", usuario_id=None, necesita_password=False):
+        self.exitoso = exitoso
+        self.mensaje = mensaje
+        self.usuario_id = usuario_id
+        self.necesita_password = necesita_password
 
 
 def verificar_login(usuario_id: int, password: str) -> ResultadoLogin:
     """
-    Valida el login de un usuario.
+    Verificar las credenciales de login.
     
     Args:
-        usuario_id: el usuario que intenta entrar.
-        password: la contraseña tipeada.
+        usuario_id (int): ID del usuario (del combo)
+        password (str): Contraseña ingresada
     
-    Retorna un ResultadoLogin con el detalle de qué pasó.
+    Retorna:
+        ResultadoLogin: Objeto con resultado y detalles
+    
+    Casos:
+        1. Usuario sin contraseña (primer ingreso): retorna necesita_password=True
+        2. Contraseña correcta: retorna exitoso=True
+        3. Contraseña incorrecta: retorna exitoso=False
+        4. Usuario no existe: retorna exitoso=False
     """
     with SessionLocal() as sesion:
-        usuario = sesion.get(Usuario, usuario_id)
+        # Buscar el usuario por ID
+        usuario = sesion.query(Usuario).filter(Usuario.id == usuario_id).first()
         
-        # Usuario inexistente o inactivo.
-        if usuario is None:
-            return ResultadoLogin(False, None, None, False, "El usuario no existe.")
-        if not usuario.activo:
-            return ResultadoLogin(False, None, None, False, "El usuario está inactivo.")
-        
-        # Usuario sin contraseña configurada -> primer ingreso.
-        if not usuario.password_hash:
+        if not usuario:
             return ResultadoLogin(
-                False, usuario.id, usuario.nombre, True,
-                "Este usuario todavía no tiene contraseña. Definí una para continuar."
+                exitoso=False,
+                mensaje="Usuario no encontrado"
             )
         
-        # Verificar la contraseña.
-        if verificar_password(password, usuario.password_hash):
+        # Caso 1: Usuario sin contraseña (primer ingreso)
+        if not usuario.password_hash:
             return ResultadoLogin(
-                True, usuario.id, usuario.nombre, False,
-                f"Bienvenido, {usuario.nombre}."
+                exitoso=False,
+                mensaje="Define tu contraseña",
+                usuario_id=usuario_id,
+                necesita_password=True
+            )
+        
+        # Caso 2 y 3: Verificar contraseña
+        if _verificar_password(password, usuario.password_hash):
+            return ResultadoLogin(
+                exitoso=True,
+                mensaje="Login exitoso",
+                usuario_id=usuario_id,
+                necesita_password=False
             )
         else:
             return ResultadoLogin(
-                False, usuario.id, usuario.nombre, False,
-                "Contraseña incorrecta."
+                exitoso=False,
+                mensaje="Contraseña incorrecta"
             )
 
 
-def establecer_password(usuario_id: int, password_nueva: str) -> bool:
+def establecer_password(usuario_id: int, password: str) -> None:
     """
-    Setea (o cambia) la contraseña de un usuario. Sirve tanto para el "primer
-    ingreso" (definir por primera vez) como para un cambio posterior.
+    Establecer la contraseña de un usuario (primer ingreso o admin).
     
-    Devuelve True si se guardó bien.
+    Args:
+        usuario_id (int): ID del usuario
+        password (str): Contraseña nueva en texto plano
+    
+    Raises:
+        ErrorDeNegocio: Si el usuario no existe
     """
-    if not password_nueva or len(password_nueva) < 4:
-        raise ValueError("La contraseña debe tener al menos 4 caracteres.")
-    
     with SessionLocal() as sesion:
-        usuario = sesion.get(Usuario, usuario_id)
-        if usuario is None:
-            raise ValueError("El usuario no existe.")
+        usuario = sesion.query(Usuario).filter(Usuario.id == usuario_id).first()
         
-        usuario.password_hash = hashear_password(password_nueva)
+        if not usuario:
+            raise ErrorDeNegocio(f"Usuario con ID {usuario_id} no existe")
+        
+        # Hashear y guardar
+        usuario.password_hash = _hash_password(password)
         sesion.commit()
-        return True
 
 
-def cambiar_password(usuario_id: int, password_actual: str, password_nueva: str) -> bool:
+def cambiar_password(usuario_id: int, password_actual: str, password_nueva: str) -> None:
     """
-    Cambia la contraseña validando primero la actual (para un usuario ya logueado
-    que quiere cambiarla desde opciones). Lanza ValueError si la actual no coincide.
+    Cambiar la contraseña de un usuario (autoservicio).
+    
+    Flujo:
+    1. Verificar que la contraseña actual sea correcta
+    2. Validar que la nueva contraseña sea diferente
+    3. Hashear y guardar la nueva contraseña
+    
+    Args:
+        usuario_id (int): ID del usuario
+        password_actual (str): Contraseña actual en texto plano
+        password_nueva (str): Contraseña nueva en texto plano
+    
+    Raises:
+        ErrorDeNegocio: Si hay validaciones que fallan
     """
     with SessionLocal() as sesion:
-        usuario = sesion.get(Usuario, usuario_id)
-        if usuario is None:
-            raise ValueError("El usuario no existe.")
-        if not usuario.password_hash or not verificar_password(password_actual, usuario.password_hash):
-            raise ValueError("La contraseña actual es incorrecta.")
+        # Buscar el usuario
+        usuario = sesion.query(Usuario).filter(Usuario.id == usuario_id).first()
+        
+        if not usuario:
+            raise ErrorDeNegocio("Usuario no encontrado")
+        
+        # Verificar que la contraseña actual sea correcta
+        if not usuario.password_hash:
+            raise ErrorDeNegocio(
+                "Este usuario no tiene contraseña. "
+                "Contacta al administrador."
+            )
+        
+        if not _verificar_password(password_actual, usuario.password_hash):
+            raise ErrorDeNegocio("La contraseña actual es incorrecta")
+        
+        # Verificar que la nueva contraseña sea diferente
+        if password_actual == password_nueva:
+            raise ErrorDeNegocio(
+                "La contraseña nueva debe ser diferente a la actual"
+            )
+        
+        # Hashear y actualizar
+        usuario.password_hash = _hash_password(password_nueva)
+        sesion.commit()
+
+
+# ============================================================================
+# FUNCIÓN: LISTAR USUARIOS CON SU ESTADO DE CONTRASEÑA (para debugging)
+# ============================================================================
+
+def listar_usuarios_con_estado() -> list[dict]:
+    """
+    Listar todos los usuarios y su estado de contraseña.
     
-    # Si la actual es correcta, delega en establecer_password (valida la nueva).
-    return establecer_password(usuario_id, password_nueva)
+    Útil para verificar quién ya tiene contraseña y quién no.
+    
+    Retorna:
+        list[dict]: Lista con {'id', 'nombre', 'tiene_password': bool}
+    """
+    with SessionLocal() as sesion:
+        usuarios = sesion.query(Usuario).all()
+        
+        resultado = [
+            {
+                'id': u.id,
+                'nombre': u.nombre,
+                'tiene_password': bool(u.password_hash),
+                'activo': u.activo
+            }
+            for u in usuarios
+        ]
+        
+        return resultado
 
 
-# ---------------------------------------------------------------------------
-# Prueba rápida:  py -m app.logica.auth
-# ---------------------------------------------------------------------------
+# ============================================================================
+# MAIN (para testing)
+# ============================================================================
+
 if __name__ == "__main__":
-    print("Usuarios activos:")
-    for u in listar_usuarios_activos():
-        estado = "con contraseña" if u["tiene_password"] else "SIN contraseña"
-        print(f"  [{u['id']}] {u['nombre']} ({estado})")
+    """
+    Script de debugging: listar usuarios y su estado.
+    
+    Uso: py -m app.logica.auth
+    """
+    print("Usuarios en la base de datos:")
+    print("=" * 60)
+    
+    usuarios = listar_usuarios_con_estado()
+    for u in usuarios:
+        estado = "✓ Con contraseña" if u['tiene_password'] else "✗ Sin contraseña"
+        activo = "✓" if u['activo'] else "✗"
+        print(f"[{activo}] {u['id']:3d} | {u['nombre']:20s} | {estado}")
+    
+    print("=" * 60)
+    print(f"Total: {len(usuarios)} usuarios")
