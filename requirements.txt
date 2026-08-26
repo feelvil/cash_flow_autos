@@ -1,20 +1,24 @@
-# Dependencias del proyecto Cash Flow Autos.
-# Instalar con:  pip install -r requirements.txt
-
-# --- Base de datos / ORM ---
-SQLAlchemy>=2.0            # ORM: modelos, sesiones, consultas
-psycopg2-binary>=2.9      # Driver para conectarse a PostgreSQL (Neon)
-alembic>=1.13             # Migraciones de esquema (versionar las tablas)
-
-# --- Configuración ---
-python-dotenv>=1.0        # Leer el connection string desde .env
-
-# --- Migración de datos desde el Excel ---
-openpyxl>=3.1            # Leer/escribir archivos .xlsx / .xlsm
-python-dateutil>=2.9    # Cálculos de fechas (último día del mes, etc.)
-
-# --- Interfaz de escritorio (más adelante) ---
-PySide6>=6.6            # UI en Qt
-
-# --- Distribución (al final del proyecto) ---
-PyInstaller>=6.0        # Generar el .exe para las PCs de la oficina
+alembic==1.19.1
+altgraph==0.17.5
+bcrypt==5.0.0
+et_xmlfile==2.0.0
+greenlet==3.5.5
+Mako==1.4.1
+MarkupSafe==3.0.3
+openpyxl==3.1.5
+packaging==26.3
+pefile==2024.8.26
+psycopg2-binary==2.9.12
+pyinstaller==6.22.2
+pyinstaller-hooks-contrib==2026.6
+PySide6==6.11.2
+PySide6_Addons==6.11.2
+PySide6_Essentials==6.11.2
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.3
+pywin32-ctypes==0.2.3
+setuptools==84.0.0
+shiboken6==6.11.2
+six==1.17.0
+SQLAlchemy==2.0.52
+typing_extensions==4.16.0
