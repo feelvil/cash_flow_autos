@@ -28,6 +28,19 @@ try:
 except ImportError:
     BD_DISPONIBLE = False
 
+# El panel de jerarquía se importa aparte: sabe manejar el caso sin BD por sí
+# mismo, así que queremos que esté disponible aunque la lógica no cargue.
+try:
+    from app.ui.panel_jerarquia import PanelJerarquia
+except ImportError:
+    PanelJerarquia = None
+
+# Completer con búsqueda por palabras (nombre o número) para el combo de códigos.
+try:
+    from app.ui.completer_codigos import instalar_completer_palabras
+except ImportError:
+    instalar_completer_palabras = None
+
 
 # Códigos de respaldo si la BD no está disponible (modo prueba / sin conexión).
 CODIGOS_PRUEBA_PAGO = [
@@ -101,6 +114,9 @@ class PantallaPagos(QWidget):
         self.combo_codigo.setEditable(True)
         self.combo_codigo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._cargar_codigos()  # llena el combo con datos reales (o de prueba)
+        # Búsqueda por palabras (nombre o número). Va DESPUÉS de llenar el combo.
+        if instalar_completer_palabras is not None:
+            instalar_completer_palabras(self.combo_codigo)
         layout_f1.addWidget(self.combo_codigo, 1)
         
         # Fecha
@@ -111,6 +127,27 @@ class PantallaPagos(QWidget):
         layout_f1.addWidget(self.input_fecha)
         
         layout_form.addLayout(layout_f1)
+        
+        # ═════════════════════════════════════════════════════
+        # PANEL DE JERARQUÍA (se actualiza al elegir/tipear un código)
+        # ═════════════════════════════════════════════════════
+        if PanelJerarquia is not None:
+            self.panel_jerarquia = PanelJerarquia()
+            layout_form.addWidget(self.panel_jerarquia)
+        else:
+            self.panel_jerarquia = None
+        
+        # Debounce: esperar 300 ms de "silencio" antes de consultar la BD.
+        self._timer_jerarquia = QTimer()
+        self._timer_jerarquia.setSingleShot(True)
+        self._timer_jerarquia.setInterval(300)
+        self._timer_jerarquia.timeout.connect(self._actualizar_jerarquia)
+        
+        self.combo_codigo.currentIndexChanged.connect(self._programar_jerarquia)
+        self.combo_codigo.editTextChanged.connect(self._programar_jerarquia)
+        
+        # Mostrar la jerarquía del código inicial.
+        self._actualizar_jerarquia()
         
         # ═════════════════════════════════════════════════════
         # FILA 2: Comprobante y Monto
@@ -246,6 +283,22 @@ class PantallaPagos(QWidget):
         except Exception as e:
             print(f"[DEBUG] No se pudieron cargar códigos de la BD: {e}")
             self.combo_codigo.addItems(CODIGOS_PRUEBA_PAGO)
+    
+    def _programar_jerarquia(self, *args):
+        """Reinicia el timer de debounce ante cada cambio del combo."""
+        if self.panel_jerarquia is not None:
+            self._timer_jerarquia.start()
+    
+    def _actualizar_jerarquia(self):
+        """Busca la clasificación del código actual y la muestra en el panel."""
+        if self.panel_jerarquia is None:
+            return
+        try:
+            codigo = self._resolver_codigo()
+        except (ValueError, AttributeError):
+            self.panel_jerarquia.limpiar()
+            return
+        self.panel_jerarquia.mostrar_codigo(codigo)
     
     def _resolver_codigo(self) -> int:
         """
