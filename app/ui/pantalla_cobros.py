@@ -352,8 +352,11 @@ class PantallaCobros(QWidget):
             for idx, mov in enumerate(movimientos):
                 self.tabla_cobros.insertRow(idx)
                 
-                # Fecha
+                # Fecha — en esta primera celda guardamos, oculto, el dict
+                # completo del movimiento (Qt.UserRole). Así, al anular, sabemos
+                # exactamente qué fila es sin re-consultar la BD.
                 item_fecha = QTableWidgetItem(str(mov.get("fecha", "")))
+                item_fecha.setData(Qt.ItemDataRole.UserRole, mov)
                 self.tabla_cobros.setItem(idx, 0, item_fecha)
                 
                 # Código
@@ -378,9 +381,23 @@ class PantallaCobros(QWidget):
                 self.tabla_cobros.setItem(idx, 4, item_usuario)
                 
                 # Estado
-                estado = "✓ Activo" if not mov.get("anulado") else "✗ Anulado"
+                anulado = bool(mov.get("anulado"))
+                estado = "✗ Anulado" if anulado else "✓ Activo"
                 item_estado = QTableWidgetItem(estado)
+                if anulado:
+                    # Fila anulada: texto gris y tachado para distinguirla visualmente.
+                    item_estado.setForeground(QColor("#9aa0a6"))
                 self.tabla_cobros.setItem(idx, 5, item_estado)
+                
+                # Si está anulado, atenuar toda la fila.
+                if anulado:
+                    for col in range(6):
+                        it = self.tabla_cobros.item(idx, col)
+                        if it:
+                            fuente = it.font()
+                            fuente.setStrikeOut(True)
+                            it.setFont(fuente)
+                            it.setForeground(QColor("#9aa0a6"))
             
             # Ajustar ancho de columnas
             self.tabla_cobros.resizeColumnsToContents()

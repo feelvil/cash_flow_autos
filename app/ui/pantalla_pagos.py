@@ -334,8 +334,10 @@ class PantallaPagos(QWidget):
             for idx, mov in enumerate(movimientos):
                 self.tabla_pagos.insertRow(idx)
                 
-                # Fecha
+                # Fecha — guardamos el dict completo del movimiento en UserRole,
+                # para poder anularlo sin re-consultar la BD.
                 item_fecha = QTableWidgetItem(str(mov.get("fecha", "")))
+                item_fecha.setData(Qt.ItemDataRole.UserRole, mov)
                 self.tabla_pagos.setItem(idx, 0, item_fecha)
                 
                 # Código
@@ -343,23 +345,37 @@ class PantallaPagos(QWidget):
                 self.tabla_pagos.setItem(idx, 1, item_codigo)
                 
                 # Comprobante
-                item_comprobante = QTableWidgetItem(mov.get("comprobante", ""))
+                item_comprobante = QTableWidgetItem(str(mov.get("comprobante", "")))
                 self.tabla_pagos.setItem(idx, 2, item_comprobante)
                 
                 # Monto (rojo)
-                monto = float(mov.get("egresos", 0))
-                item_monto = QTableWidgetItem(f"${monto:,.2f}")
-                item_monto.setForeground(QColor("#ea4335"))
+                try:
+                    monto = float(mov.get("egresos", 0))
+                    item_monto = QTableWidgetItem(f"${monto:,.2f}")
+                    item_monto.setForeground(QColor("#ea4335"))
+                except:
+                    item_monto = QTableWidgetItem("$0,00")
                 self.tabla_pagos.setItem(idx, 3, item_monto)
                 
                 # Usuario
-                item_usuario = QTableWidgetItem(mov.get("usuario", ""))
+                item_usuario = QTableWidgetItem(str(mov.get("usuario", "")))
                 self.tabla_pagos.setItem(idx, 4, item_usuario)
                 
                 # Estado
-                estado = "✓ Activo" if not mov.get("anulado") else "✗ Anulado"
+                anulado = bool(mov.get("anulado"))
+                estado = "✗ Anulado" if anulado else "✓ Activo"
                 item_estado = QTableWidgetItem(estado)
                 self.tabla_pagos.setItem(idx, 5, item_estado)
+                
+                # Si está anulado, atenuar y tachar toda la fila.
+                if anulado:
+                    for col in range(6):
+                        it = self.tabla_pagos.item(idx, col)
+                        if it:
+                            fuente = it.font()
+                            fuente.setStrikeOut(True)
+                            it.setFont(fuente)
+                            it.setForeground(QColor("#9aa0a6"))
             
             # Ajustar ancho de columnas
             self.tabla_pagos.resizeColumnsToContents()
