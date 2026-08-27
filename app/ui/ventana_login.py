@@ -1,18 +1,24 @@
 """
 Pantalla de login: autenticación de usuario.
 
-Elementos:
-- Combo con lista de usuarios activos
-- Campo de contraseña
-- Botones Ingresar / Cancelar
-- Validación de credenciales con bcrypt
+Características:
+- Estilos QSS profesionales (mismo que main_window.py)
+- Centrada en la pantalla
+- Elementos:
+  - Combo con lista de usuarios activos
+  - Campo de contraseña
+  - Botones Ingresar / Cancelar
+  - Validación de credenciales con bcrypt
 """
 
+from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
-    QPushButton, QMessageBox
+    QPushButton, QMessageBox, QDialog, QSpinBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QRect, QSize
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QScreen
 
 # Importar funciones de auth y sesión
 from app.logica.auth import listar_usuarios_activos, verificar_login, establecer_password, ResultadoLogin
@@ -24,64 +30,90 @@ class VentanaLogin(QWidget):
     """
     Ventana de login principal.
     
-    Flujo:
-    1. Usuario elige su nombre en el combo
-    2. Ingresa contraseña (o define si es primer ingreso)
-    3. Clic "Ingresar"
-    4. Si OK, abre VentanaPrincipal y cierra login
+    Características:
+    - Centrada en la pantalla
+    - Estilos QSS cargados desde estilos.qss
+    - Flujo de autenticación:
+      1. Usuario elige su nombre en el combo
+      2. Ingresa contraseña (o define si es primer ingreso)
+      3. Clic "Ingresar"
+      4. Si OK, abre VentanaPrincipal y cierra login
     """
     
     def __init__(self):
         super().__init__()
         
         self.setWindowTitle("Cash Flow Autos — Login")
-        self.setGeometry(400, 200, 400, 300)
+        self.setGeometry(0, 0, 450, 350)
+        
+        # Cargar estilos QSS
+        self._cargar_estilos()
+        
+        # Centrar la ventana en la pantalla
+        self._centrar_en_pantalla()
         
         # Layout principal
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+        layout.setContentsMargins(24, 24, 24, 24)
         
         # ========================================================================
-        # TÍTULO
+        # LOGO / TÍTULO
         # ========================================================================
         titulo = QLabel("Cash Flow Autos")
-        titulo.setStyleSheet("font-size: 18px; font-weight: bold; color: #2196F3;")
+        titulo.setObjectName("labelTitulo")
+        titulo.setAlignment(Qt.AlignCenter)
         layout.addWidget(titulo)
         
-        layout.addWidget(QLabel("Sistema de gestión de flujo de fondos"))
+        subtitulo = QLabel("Sistema de gestión de flujo de fondos")
+        subtitulo.setObjectName("labelSubtitulo")
+        subtitulo.setAlignment(Qt.AlignCenter)
+        layout.addWidget(subtitulo)
+        
         layout.addSpacing(12)
         
         # ========================================================================
         # USUARIO (combo)
         # ========================================================================
-        layout.addWidget(QLabel("Usuario"))
+        label_usuario = QLabel("Usuario")
+        label_usuario.setObjectName("labelTitulo")
+        label_usuario.setStyleSheet("font-size: 13px; font-weight: 600;")
+        layout.addWidget(label_usuario)
+        
         self.combo_usuario = QComboBox()
         
         # Cargar usuarios activos
         usuarios = listar_usuarios_activos()
-        for u in usuarios:
-            self.combo_usuario.addItem(u['nombre'], u['id'])
+        if usuarios:
+            for u in usuarios:
+                self.combo_usuario.addItem(u['nombre'], u['id'])
+        else:
+            # Si no hay usuarios, agregar placeholder
+            self.combo_usuario.addItem("Sin usuarios disponibles", None)
         
         layout.addWidget(self.combo_usuario)
         
         # ========================================================================
         # CONTRASEÑA
         # ========================================================================
-        layout.addWidget(QLabel("Contraseña"))
+        label_contrasena = QLabel("Contraseña")
+        label_contrasena.setObjectName("labelTitulo")
+        label_contrasena.setStyleSheet("font-size: 13px; font-weight: 600;")
+        layout.addWidget(label_contrasena)
+        
         self.input_contrasena = QLineEdit()
         self.input_contrasena.setEchoMode(QLineEdit.Password)
         self.input_contrasena.setPlaceholderText("Ingresa tu contraseña")
         self.input_contrasena.returnPressed.connect(self._intentar_login)
         layout.addWidget(self.input_contrasena)
         
-        # Spacer
         layout.addSpacing(8)
         
         # Mensaje de error
         self.label_error = QLabel("")
-        self.label_error.setStyleSheet("color: #d32f2f; font-size: 12px;")
+        self.label_error.setObjectName("labelError")
         self.label_error.setVisible(False)
+        self.label_error.setWordWrap(True)
         layout.addWidget(self.label_error)
         
         layout.addStretch()
@@ -90,32 +122,72 @@ class VentanaLogin(QWidget):
         # BOTONES
         # ========================================================================
         layout_botones = QHBoxLayout()
+        layout_botones.setSpacing(12)
         
-        btn_cancelar = QPushButton("Salir")
+        btn_cancelar = QPushButton("Cancelar")
+        btn_cancelar.setObjectName("botonSecundario")
         btn_cancelar.clicked.connect(self.close)
+        btn_cancelar.setMinimumHeight(36)
         
         btn_ingresar = QPushButton("Ingresar")
-        btn_ingresar.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                padding: 10px 24px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            """
-        )
+        btn_ingresar.setObjectName("botonExito")  # Verde
         btn_ingresar.clicked.connect(self._intentar_login)
+        btn_ingresar.setMinimumHeight(36)
         
-        layout_botones.addStretch()
         layout_botones.addWidget(btn_cancelar)
         layout_botones.addWidget(btn_ingresar)
         layout.addLayout(layout_botones)
+    
+    def _cargar_estilos(self):
+        """
+        Cargar archivo estilos.qss y aplicarlo a la ventana.
+        
+        Busca estilos.qss en:
+        1. Raíz del proyecto
+        2. app/ui/
+        """
+        # Rutas posibles
+        rutas = [
+            Path(__file__).parent.parent.parent / "estilos.qss",  # raíz/estilos.qss
+            Path(__file__).parent / "estilos.qss",                # app/ui/estilos.qss
+        ]
+        
+        # Buscar y cargar
+        for ruta in rutas:
+            if ruta.exists():
+                try:
+                    with open(ruta, 'r', encoding='utf-8') as f:
+                        estilos = f.read()
+                    self.setStyleSheet(estilos)
+                    print(f"✓ Estilos de login cargados desde: {ruta}")
+                    return
+                except Exception as e:
+                    print(f"✗ Error cargando estilos desde {ruta}: {e}")
+        
+        print("⚠ No se encontró estilos.qss para login, usando estilos por defecto")
+    
+    def _centrar_en_pantalla(self):
+        """
+        Centrar la ventana en el centro de la pantalla.
+        
+        Calcula la posición basada en el tamaño de la pantalla.
+        """
+        # Obtener información de la pantalla
+        screen = self.screen()
+        if screen:
+            # Geometría de la pantalla
+            screen_geometry = screen.availableGeometry()
+            
+            # Calcular posición para centrar
+            x = (screen_geometry.width() - self.width()) // 2
+            y = (screen_geometry.height() - self.height()) // 2
+            
+            # Asegurarse de que la ventana no se salga de la pantalla
+            x = max(0, x)
+            y = max(0, y)
+            
+            # Establecer posición
+            self.move(x, y)
     
     def _intentar_login(self):
         """
@@ -137,7 +209,7 @@ class VentanaLogin(QWidget):
         password = self.input_contrasena.text()
         
         if not usuario_id:
-            self.label_error.setText("Selecciona un usuario")
+            self.label_error.setText("Selecciona un usuario válido")
             self.label_error.setVisible(True)
             return
         
@@ -151,7 +223,7 @@ class VentanaLogin(QWidget):
         
         # Caso: usuario sin contraseña (primer ingreso)
         if resultado.necesita_password:
-            self._dialogo_primera_contraseña(usuario_id, usuario_nombre)
+            self._dialogo_primera_contrasena(usuario_id, usuario_nombre)
             return
         
         # Caso: login exitoso
@@ -172,39 +244,65 @@ class VentanaLogin(QWidget):
             self.label_error.setVisible(True)
             self.input_contrasena.clear()
     
-    def _dialogo_primera_contraseña(self, usuario_id: int, usuario_nombre: str):
+    def _dialogo_primera_contrasena(self, usuario_id: int, usuario_nombre: str):
         """
         Diálogo para usuario sin contraseña (primer ingreso).
         
         Le pide que ingrese su contraseña por primera vez.
         """
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QPushButton, QMessageBox
-        
         # Crear diálogo
         dialogo = QDialog(self)
         dialogo.setWindowTitle("Primera contraseña")
-        dialogo.setGeometry(400, 250, 350, 200)
+        dialogo.setGeometry(0, 0, 400, 250)
+        dialogo.setModal(True)
+        
+        # Cargar estilos en el diálogo también
+        self._cargar_estilos_dialogo(dialogo)
+        
+        # Centrar diálogo
+        screen_geometry = self.screen().availableGeometry()
+        x = (screen_geometry.width() - dialogo.width()) // 2
+        y = (screen_geometry.height() - dialogo.height()) // 2
+        dialogo.move(max(0, x), max(0, y))
         
         layout = QVBoxLayout(dialogo)
         layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(20, 20, 20, 20)
         
-        layout.addWidget(QLabel(f"Hola {usuario_nombre}!"))
-        layout.addWidget(QLabel("Ingresa una contraseña para tu cuenta:"))
+        # Mensaje de bienvenida
+        label_bienvenida = QLabel(f"¡Hola {usuario_nombre}!")
+        label_bienvenida.setObjectName("labelTitulo")
+        layout.addWidget(label_bienvenida)
+        
+        label_instruccion = QLabel("Ingresa una contraseña para tu cuenta:")
+        label_instruccion.setObjectName("labelSubtitulo")
+        layout.addWidget(label_instruccion)
+        
+        # Contraseña nueva
+        label_nueva = QLabel("Contraseña")
+        label_nueva.setStyleSheet("font-size: 13px; font-weight: 600;")
+        layout.addWidget(label_nueva)
         
         input_nueva = QLineEdit()
         input_nueva.setEchoMode(QLineEdit.Password)
-        input_nueva.setPlaceholderText("Contraseña (mín. 6 caracteres)")
+        input_nueva.setPlaceholderText("Mínimo 6 caracteres")
         layout.addWidget(input_nueva)
+        
+        # Repetir contraseña
+        label_repetir = QLabel("Repetir contraseña")
+        label_repetir.setStyleSheet("font-size: 13px; font-weight: 600;")
+        layout.addWidget(label_repetir)
         
         input_repetir = QLineEdit()
         input_repetir.setEchoMode(QLineEdit.Password)
-        input_repetir.setPlaceholderText("Repetir contraseña")
+        input_repetir.setPlaceholderText("Repite la contraseña")
         layout.addWidget(input_repetir)
         
+        # Mensaje de error
         label_error = QLabel("")
-        label_error.setStyleSheet("color: #d32f2f; font-size: 12px;")
+        label_error.setObjectName("labelError")
         label_error.setVisible(False)
+        label_error.setWordWrap(True)
         layout.addWidget(label_error)
         
         layout.addStretch()
@@ -213,21 +311,13 @@ class VentanaLogin(QWidget):
         layout_botones = QHBoxLayout()
         
         btn_cancelar = QPushButton("Cancelar")
+        btn_cancelar.setObjectName("botonSecundario")
         btn_cancelar.clicked.connect(dialogo.reject)
+        btn_cancelar.setMinimumHeight(36)
         
         btn_crear = QPushButton("Crear contraseña")
-        btn_crear.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            """
-        )
+        btn_crear.setObjectName("botonExito")
+        btn_crear.setMinimumHeight(36)
         
         def crear_contrasena():
             # Validar
@@ -272,3 +362,22 @@ class VentanaLogin(QWidget):
             # Usuario creó contraseña, intentar login de vuelta
             self.input_contrasena.setText(input_nueva.text())
             self._intentar_login()
+    
+    def _cargar_estilos_dialogo(self, dialogo):
+        """
+        Cargar estilos para un diálogo (helper).
+        """
+        rutas = [
+            Path(__file__).parent.parent.parent / "estilos.qss",
+            Path(__file__).parent / "estilos.qss",
+        ]
+        
+        for ruta in rutas:
+            if ruta.exists():
+                try:
+                    with open(ruta, 'r', encoding='utf-8') as f:
+                        estilos = f.read()
+                    dialogo.setStyleSheet(estilos)
+                    return
+                except:
+                    pass

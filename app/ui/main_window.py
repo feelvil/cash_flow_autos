@@ -5,8 +5,10 @@ Estructura:
 - Sidebar con navegación: Dashboard, Cobros, Pagos, Reportes, Opciones
 - Panel principal que cambia según la opción seleccionada
 - Header con nombre del usuario logueado
+- Estilos QSS aplicados desde estilos.qss
 """
 
+from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QListWidget, QListWidgetItem,
     QStackedWidget, QLabel, QPushButton
@@ -18,7 +20,7 @@ from PySide6.QtGui import QIcon
 from app.ui.panel_dashboard import PanelDashboard
 from app.ui.pantalla_cobros import PantallaCobros
 from app.ui.pantalla_pagos import PantallaPagos
-from app.ui.pantalla_reportes import PantallarePortes  # Nota: nombre de clase es PantallarePortes
+from app.ui.pantalla_reportes import PantallarePortes
 from app.ui.panel_opciones import PanelOpciones
 
 # Importar sesión para obtener el usuario actual
@@ -33,6 +35,7 @@ class VentanaPrincipal(QMainWindow):
     - Navegación mediante sidebar
     - Visualización del panel activo (stacked widget)
     - Header con información del usuario
+    - Aplicación de estilos QSS
     """
     
     def __init__(self):
@@ -41,6 +44,9 @@ class VentanaPrincipal(QMainWindow):
         # Configuración básica
         self.setWindowTitle("Cash Flow Autos")
         self.setGeometry(100, 100, 1400, 800)
+        
+        # Cargar estilos QSS
+        self._cargar_estilos()
         
         # Crear widget central y layout principal
         widget_central = QWidget()
@@ -53,22 +59,22 @@ class VentanaPrincipal(QMainWindow):
         # SIDEBAR (navegación)
         # ========================================================================
         self.sidebar = QListWidget()
+        self.sidebar.setObjectName("sidebar")
         self.sidebar.setMaximumWidth(180)
         self.sidebar.setMinimumWidth(180)
         
         # Definir opciones de navegación (sin Categorías ni Cuentas)
         opciones_nav = [
-            ("Dashboard", "ti-layout-dashboard"),
-            ("Cobros", "ti-arrow-down-left"),
-            ("Pagos", "ti-arrow-up-right"),
-            ("Reportes", "ti-chart-bar"),
-            ("Opciones", "ti-settings"),
+            "Dashboard",
+            "Cobros",
+            "Pagos",
+            "Reportes",
+            "Opciones",
         ]
         
         # Agregar cada opción al sidebar
-        for texto, icono in opciones_nav:
+        for texto in opciones_nav:
             item = QListWidgetItem(texto)
-            item.setIcon(QIcon())  # Placeholder para ícono (PySide6 + Tabler)
             item.setSizeHint(QSize(180, 50))
             self.sidebar.addItem(item)
         
@@ -115,6 +121,34 @@ class VentanaPrincipal(QMainWindow):
         self.paneles.setCurrentIndex(0)
         self.sidebar.setCurrentRow(0)
     
+    def _cargar_estilos(self):
+        """
+        Cargar archivo estilos.qss y aplicarlo a la ventana.
+        
+        Busca estilos.qss en:
+        1. Mismo directorio que este archivo (app/ui/)
+        2. Raíz del proyecto
+        """
+        # Rutas posibles
+        rutas = [
+            Path(__file__).parent / "estilos.qss",           # app/ui/estilos.qss
+            Path(__file__).parent.parent.parent / "estilos.qss",  # raíz/estilos.qss
+        ]
+        
+        # Buscar y cargar
+        for ruta in rutas:
+            if ruta.exists():
+                try:
+                    with open(ruta, 'r', encoding='utf-8') as f:
+                        estilos = f.read()
+                    self.setStyleSheet(estilos)
+                    print(f"✓ Estilos cargados desde: {ruta}")
+                    return
+                except Exception as e:
+                    print(f"✗ Error cargando estilos desde {ruta}: {e}")
+        
+        print("⚠ No se encontró estilos.qss, usando estilos por defecto")
+    
     def _crear_header(self):
         """
         Crear el header con información del usuario.
@@ -134,9 +168,10 @@ class VentanaPrincipal(QMainWindow):
         label_usuario = QLabel(f"Conectado como: {nombre_usuario}")
         label_usuario.setStyleSheet("font-size: 13px; color: #666;")
         
-        # Botón cerrar sesión (spacer a la derecha)
+        # Botón cerrar sesión
         btn_cerrar = QPushButton("Cerrar sesión")
         btn_cerrar.setMaximumWidth(120)
+        btn_cerrar.setObjectName("botonSecundario")
         btn_cerrar.clicked.connect(self._cerrar_sesion)
         
         # Armar header
@@ -167,12 +202,9 @@ class VentanaPrincipal(QMainWindow):
     def _cerrar_sesion(self):
         """
         Cerrar la sesión del usuario actual y volver a la pantalla de login.
-        
-        Nota: En v1, esto cierra la app. En v2, se podría volver a mostrar
-        el login sin cerrar la ventana.
         """
         # Terminar la sesión actual
         sesion.terminar_sesion()
         
-        # Cerrar la app
+        # Cerrar la ventana principal
         self.close()
